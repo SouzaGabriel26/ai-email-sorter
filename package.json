@@ -12,6 +12,7 @@
     "services:down": "pnpm docker:compose --env-file=.env down"
   },
   "dependencies": {
+    "@prisma/client": "6.12.0",
     "next": "15.4.1",
     "react": "19.1.0",
     "react-dom": "19.1.0"

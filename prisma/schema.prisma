@@ -7,3 +7,113 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// NextAuth.js required models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts     Account[]
+  categories   Category[]
+  emails       Email[]
+  gmailWatches GmailWatch[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// Application-specific models
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @db.Text
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails Email[]
+
+  // Indexes
+  @@unique([userId, name]) // Prevent duplicate category names per user
+  @@map("categories")
+}
+
+model Email {
+  id           String    @id @default(cuid())
+  gmailId      String    @unique // Gmail message ID
+  userId       String
+  categoryId   String? // Optional in case categorization fails
+  accountEmail String // Which Gmail account received this email
+  subject      String
+  fromEmail    String
+  fromName     String?
+  toEmail      String
+  bodyText     String?   @db.Text
+  bodyHtml     String?   @db.Text
+  aiSummary    String?   @db.Text
+  isArchived   Boolean   @default(false)
+  receivedAt   DateTime
+  processedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // Indexes
+  @@index([userId, accountEmail])
+  @@index([categoryId])
+  @@index([gmailId])
+  @@map("emails")
+}
+
+model GmailWatch {
+  id           String   @id @default(cuid())
+  userId       String
+  accountEmail String // Gmail account being watched
+  historyId    String // Last processed Gmail history ID
+  topicName    String // Pub/Sub topic name
+  expiresAt    DateTime // When the watch expires (7 days max)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@unique([userId, accountEmail]) // One active watch per account
+  @@index([isActive, expiresAt])
+  @@map("gmail_watches")
+}
