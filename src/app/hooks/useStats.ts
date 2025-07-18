@@ -5,7 +5,6 @@ export function useStats() {
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalEmailsProcessed: 0,
-    activeCategories: 0,
     connectedAccounts: 0,
   });
 

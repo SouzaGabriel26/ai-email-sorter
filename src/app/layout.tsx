@@ -1,4 +1,5 @@
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { ToasterProvider } from "@/components/providers/toaster-provider";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AI Email Sorter",
-  description: "AI-powered email sorting and management for Gmail",
+  description: "Automatically sort and summarize your emails with AI",
 };
 
 export default function RootLayout({
@@ -30,6 +31,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           {children}
+          <ToasterProvider />
         </AuthProvider>
       </body>
     </html>

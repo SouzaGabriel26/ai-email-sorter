@@ -1,11 +1,14 @@
-import { useStats } from "@/app/hooks/useStats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Mail, Settings, Users } from "lucide-react";
 
-export function StatsCards() {
+interface StatsCardsProps {
+  totalEmailsProcessed: number;
+  activeCategories: number;
+  connectedAccounts: number;
+  isLoading: boolean;
+}
 
-  const { activeCategories, connectedAccounts, totalEmailsProcessed, isLoading } = useStats();
-
+export function StatsCards({ totalEmailsProcessed, activeCategories, connectedAccounts, isLoading }: StatsCardsProps) {
   return (
     <div className="grid md:grid-cols-3 gap-6 mt-8">
       <Card>

@@ -6,7 +6,6 @@ import { getServerSession } from "next-auth";
 
 export type DashboardStats = {
   totalEmailsProcessed: number;
-  activeCategories: number;
   connectedAccounts: number;
 };
 
@@ -16,7 +15,6 @@ export async function getStatsAction(): Promise<DashboardStats> {
     if (!session?.user?.email) {
       return {
         totalEmailsProcessed: 0,
-        activeCategories: 0,
         connectedAccounts: 0,
       };
     }
@@ -30,28 +28,23 @@ export async function getStatsAction(): Promise<DashboardStats> {
     if (!user) {
       return {
         totalEmailsProcessed: 0,
-        activeCategories: 0,
         connectedAccounts: 0,
       };
     }
 
-    const [totalEmailsProcessed, activeCategories, connectedAccounts] =
-      await Promise.all([
-        prisma.email.count({ where: { userId: user.id } }),
-        prisma.category.count({ where: { userId: user.id } }),
-        prisma.account.count({ where: { userId: user.id } }),
-      ]);
+    const [totalEmailsProcessed, connectedAccounts] = await Promise.all([
+      prisma.email.count({ where: { userId: user.id } }),
+      prisma.account.count({ where: { userId: user.id } }),
+    ]);
 
     return {
       totalEmailsProcessed,
-      activeCategories,
       connectedAccounts,
     };
   } catch (error) {
     console.error("Dashboard stats error:", error);
     return {
       totalEmailsProcessed: 0,
-      activeCategories: 0,
       connectedAccounts: 0,
     };
   }
