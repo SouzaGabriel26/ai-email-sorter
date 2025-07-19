@@ -1,6 +1,7 @@
 "use server";
 
 import { authOptions } from "@/lib/auth";
+import { setupGmailWatchForUser } from "@/lib/gmail-utils";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 import { getServerSession } from "next-auth";
@@ -20,7 +21,6 @@ async function getAllGmailClients() {
     throw new Error("User not found");
   }
 
-  // Get ALL Google accounts for this user
   const accounts = await prisma.account.findMany({
     where: {
       userId: user.id,
@@ -34,11 +34,9 @@ async function getAllGmailClients() {
     );
   }
 
-  // Create Gmail clients for each account
   const gmailClients = await Promise.all(
     accounts
       .filter((account) => {
-        // Prefer session token, fallback to database token
         const accessToken = session.accessToken || account.access_token;
         return !!accessToken;
       })
@@ -48,15 +46,10 @@ async function getAllGmailClients() {
           process.env.GOOGLE_CLIENT_SECRET
         );
 
-        // Check token expiration
         const now = Math.floor(Date.now() / 1000);
         const isTokenExpired = account.expires_at && account.expires_at < now;
 
         if (isTokenExpired && account.refresh_token) {
-          console.log(
-            `🔄 Refreshing token for account ${account.providerAccountId}`
-          );
-
           try {
             oauth2Client.setCredentials({
               refresh_token: account.refresh_token,
@@ -79,14 +72,10 @@ async function getAllGmailClients() {
                 access_token: credentials.access_token,
                 refresh_token: account.refresh_token,
               });
-
-              console.log(
-                `✅ Token refreshed for account ${account.providerAccountId}`
-              );
             }
           } catch (error) {
             console.error(
-              `❌ Failed to refresh token for account ${account.providerAccountId}:`,
+              `Failed to refresh token for account ${account.providerAccountId}:`,
               error
             );
             throw new Error(
@@ -104,7 +93,6 @@ async function getAllGmailClients() {
         }
 
         const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-
         return { gmail, account };
       })
   );
@@ -174,7 +162,6 @@ export async function testGmailConnectionAction() {
     };
   } catch (error) {
     console.error("Gmail test failed:", error);
-
     return {
       success: false,
       error:
@@ -188,89 +175,22 @@ export async function startGmailWatchAction() {
     const { user, gmailClients } = await getAllGmailClients();
 
     const results = await Promise.allSettled(
-      gmailClients.map(async ({ gmail, account }): Promise<WatchResult> => {
-        // Check for existing active watch for this specific account
-        const existingWatch = await prisma.gmailWatch.findFirst({
-          where: {
-            userId: user.id,
-            accountEmail: account.providerAccountId,
-            isActive: true,
-            expiresAt: { gt: new Date() },
-          },
-        });
+      gmailClients.map(async ({ account }): Promise<WatchResult> => {
+        const result = await setupGmailWatchForUser(
+          user.id,
+          account.access_token!,
+          account.refresh_token || undefined
+        );
 
-        if (existingWatch) {
-          return {
-            accountEmail: account.providerAccountId,
-            status: "already_active",
-            expiresAt: existingWatch.expiresAt,
-          };
+        if (!result.success) {
+          throw new Error(result.error);
         }
 
-        const topicName = `projects/${process.env.GOOGLE_CLOUD_PROJECT_ID}/topics/gmail-inbox-changes-ai-email-sorter`;
-
-        console.log("About to call Gmail API with:", {
-          accountEmail: account.providerAccountId,
-          topicName,
-          projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-          hasProjectId: !!process.env.GOOGLE_CLOUD_PROJECT_ID,
-        });
-
-        try {
-          const response = await gmail.users.watch({
-            userId: "me",
-            requestBody: {
-              labelIds: ["INBOX"],
-              topicName,
-            },
-          });
-
-          if (!response.data.historyId || !response.data.expiration) {
-            throw new Error("Invalid response from Gmail API");
-          }
-
-          // Store in database
-          const expiresAt = new Date(parseInt(response.data.expiration));
-
-          await prisma.gmailWatch.upsert({
-            where: {
-              userId_accountEmail: {
-                userId: user.id,
-                accountEmail: account.providerAccountId,
-              },
-            },
-            update: {
-              userId: user.id,
-              accountEmail: account.providerAccountId,
-              historyId: response.data.historyId,
-              topicName,
-              expiresAt,
-              isActive: true,
-            },
-            create: {
-              userId: user.id,
-              accountEmail: account.providerAccountId,
-              historyId: response.data.historyId,
-              topicName,
-              expiresAt,
-              isActive: true,
-            },
-          });
-
-          return {
-            accountEmail: account.providerAccountId,
-            status: "started",
-            expiresAt,
-          };
-        } catch (gmailError) {
-          console.error(
-            "Gmail API Error for account",
-            account.providerAccountId,
-            ":",
-            gmailError
-          );
-          throw gmailError; // Re-throw so Promise.allSettled marks it as rejected
-        }
+        return {
+          accountEmail: result.accountEmail!,
+          status: result.status!,
+          expiresAt: result.expiresAt!,
+        };
       })
     );
 
@@ -285,7 +205,6 @@ export async function startGmailWatchAction() {
       (result) => result.status === "rejected"
     ).length;
 
-    // Log the actual rejection reasons
     results.forEach((result, index) => {
       if (result.status === "rejected") {
         console.error(`Account ${index + 1} failed with error:`, result.reason);
@@ -321,7 +240,6 @@ export async function startGmailWatchAction() {
     };
   } catch (error) {
     console.error("Gmail watch failed:", error);
-
     return {
       success: false,
       error:
@@ -334,14 +252,12 @@ export async function stopGmailWatchAction() {
   try {
     const { user, gmailClients } = await getAllGmailClients();
 
-    // Stop watches for all accounts
     const results = await Promise.allSettled(
       gmailClients.map(async ({ gmail }) => {
         await gmail.users.stop({ userId: "me" });
       })
     );
 
-    // Deactivate all watches in database
     await prisma.gmailWatch.updateMany({
       where: {
         userId: user.id,
@@ -366,7 +282,6 @@ export async function stopGmailWatchAction() {
     };
   } catch (error) {
     console.error("Stop Gmail watch failed:", error);
-
     return {
       success: false,
       error: "Failed to stop Gmail monitoring",
