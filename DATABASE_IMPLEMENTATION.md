@@ -147,8 +147,13 @@ await prisma.category.create({
 DATABASE_URL="postgresql://..."
 GOOGLE_CLIENT_ID="..."
 GOOGLE_CLIENT_SECRET="..."
+GOOGLE_CLOUD_PROJECT_ID="your-gcp-project-id"
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="..." # Even more important with JWT strategy
+NEXT_PUBLIC_APP_URL="http://localhost:3000" # For development, use your Vercel URL for production
+
+# QStash Configuration (for background email processing)
+QSTASH_TOKEN="..." # Get from Upstash Console
 ```
 
 ## Development Commands
