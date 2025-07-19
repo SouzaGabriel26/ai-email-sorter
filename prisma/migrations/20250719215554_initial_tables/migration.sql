@@ -21,6 +21,7 @@ CREATE TABLE "accounts" (
     "refresh_token" TEXT,
     "access_token" TEXT,
     "expires_at" INTEGER,
+    "refresh_token_expires_in" INTEGER,
     "token_type" TEXT,
     "scope" TEXT,
     "id_token" TEXT,
