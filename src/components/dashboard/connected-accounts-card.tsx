@@ -1,3 +1,4 @@
+import { useStats } from "@/app/hooks/useStats"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +10,8 @@ interface ConnectedAccountsCardProps {
 }
 
 export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
+  const { connectedAccounts, isLoading } = useStats()
+
   return (
     <Card className="lg:col-span-1">
       <CardHeader>
@@ -21,20 +24,24 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Current Account */}
-        <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
-          <Avatar className="h-10 w-10">
-            <AvatarImage src={session.user.image || ""} alt={session.user.name || ""} />
-            <AvatarFallback>
-              {session.user.name?.split(" ").map(n => n[0]).join("") || "U"}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">
-              {session.user.email}
-            </p>
-            <p className="text-xs text-blue-600">Primary Account</p>
+        {/* Account Summary */}
+        <div className="text-center p-4 bg-blue-50 rounded-lg">
+          <div className="flex items-center justify-center space-x-2 mb-2">
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={session.user.image || ""} alt={session.user.name || ""} />
+              <AvatarFallback>
+                {session.user.name?.split(" ").map(n => n[0]).join("") || "U"}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <p className="text-sm font-medium text-gray-900">{session.user.name}</p>
+              <p className="text-xs text-blue-600">Primary Account</p>
+            </div>
           </div>
+          <p className="text-lg font-bold text-blue-600">
+            {isLoading ? "..." : connectedAccounts} Gmail Account{connectedAccounts !== 1 ? 's' : ''}
+          </p>
+          <p className="text-xs text-gray-500">Connected to your account</p>
         </div>
 
         {/* Add Account Button */}
@@ -42,6 +49,11 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
           <Plus className="h-4 w-4 mr-2" />
           Connect Another Gmail Account
         </Button>
+
+        {/* Help Text */}
+        <p className="text-xs text-gray-500 text-center">
+          Connect multiple Gmail accounts to process emails from all your inboxes
+        </p>
       </CardContent>
     </Card>
   )
