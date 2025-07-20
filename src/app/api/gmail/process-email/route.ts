@@ -1,242 +1,226 @@
+import { responses } from "@/lib/api-response";
+import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import type { EmailProcessingJobData } from "@/lib/qstash";
-import { google, type gmail_v1 } from "googleapis";
-import { NextRequest, NextResponse } from "next/server";
+import {
+  gmailService,
+  type GmailClientOptions,
+} from "@/services/gmail.service";
+import type { EmailProcessingResult } from "@/types/api";
+import { NextRequest } from "next/server";
 
-async function createGmailClient(data: EmailProcessingJobData) {
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET
-  );
+interface ProcessingStats {
+  processed: number;
+  duplicates: number;
+  archived: number;
+  messages: string[];
+}
 
-  const now = Math.floor(Date.now() / 1000);
-  const isTokenExpired = data.expiresAt && data.expiresAt < now;
+async function validateRequest(data: EmailProcessingJobData) {
+  const { emailAddress, historyId, userId, accountId, accessToken } = data;
 
-  if (isTokenExpired) {
-    if (!data.refreshToken) {
-      throw new Error("Access token expired and no refresh token available");
-    }
+  if (!emailAddress || !historyId || !userId || !accountId || !accessToken) {
+    throw new Error("Invalid request body");
+  }
 
-    oauth2Client.setCredentials({ refresh_token: data.refreshToken });
+  const gmailWatch = await prisma.gmailWatch.findFirst({
+    where: {
+      userId,
+      accountEmail: emailAddress,
+      isActive: true,
+      expiresAt: { gt: new Date() },
+    },
+  });
 
-    const { credentials } = await oauth2Client.refreshAccessToken();
+  if (!gmailWatch) {
+    throw new Error("No active watch found");
+  }
 
-    if (!credentials.access_token) {
-      throw new Error("Failed to get new access token from refresh");
-    }
+  return gmailWatch;
+}
 
-    await prisma.account.update({
-      where: { id: data.accountId },
+async function processEmail(
+  messageId: string,
+  userId: string,
+  emailAddress: string,
+  clientOptions: GmailClientOptions
+): Promise<{ processed: boolean; archived: boolean }> {
+  // Check for duplicates first
+  const existingEmail = await prisma.email.findUnique({
+    where: { gmailId: messageId },
+  });
+
+  if (existingEmail) {
+    logger.debug("Skipping duplicate message", { messageId });
+    return { processed: false, archived: false };
+  }
+
+  try {
+    const emailContent = await gmailService.getEmailContent(
+      clientOptions,
+      messageId
+    );
+
+    await prisma.email.create({
       data: {
-        access_token: credentials.access_token,
-        expires_at: credentials.expiry_date
-          ? Math.floor(credentials.expiry_date / 1000)
-          : null,
+        gmailId: messageId,
+        userId,
+        accountEmail: emailAddress,
+        subject: emailContent.subject,
+        fromEmail: emailContent.fromEmail,
+        fromName: emailContent.fromName,
+        toEmail: emailContent.toEmail,
+        bodyText: emailContent.bodyText,
+        bodyHtml: emailContent.bodyHtml,
+        receivedAt: emailContent.receivedAt,
+        processedAt: new Date(),
+        aiSummary: null,
+        categoryId: null,
       },
     });
 
-    oauth2Client.setCredentials({
-      access_token: credentials.access_token,
-      refresh_token: data.refreshToken,
-    });
-  } else {
-    oauth2Client.setCredentials({
-      access_token: data.accessToken,
-      refresh_token: data.refreshToken,
-    });
-  }
+    // Archive the email in Gmail after successful database storage
+    const archived = await gmailService.archiveEmail(clientOptions, messageId);
 
-  return google.gmail({ version: "v1", auth: oauth2Client });
-}
+    if (archived) {
+      // Update the database to reflect archive status
+      await prisma.email.update({
+        where: { gmailId: messageId },
+        data: { isArchived: true },
+      });
 
-function extractEmailBody(payload: gmail_v1.Schema$MessagePart): {
-  bodyText: string;
-  bodyHtml: string;
-} {
-  let bodyText = "";
-  let bodyHtml = "";
-
-  function extractFromPart(part: gmail_v1.Schema$MessagePart) {
-    if (part.mimeType === "text/plain" && part.body?.data) {
-      bodyText = Buffer.from(part.body.data, "base64").toString("utf-8");
-    } else if (part.mimeType === "text/html" && part.body?.data) {
-      bodyHtml = Buffer.from(part.body.data, "base64").toString("utf-8");
-    } else if (part.parts) {
-      part.parts.forEach(extractFromPart);
+      logger.info("Email processed and archived successfully", {
+        messageId,
+        subject: emailContent.subject,
+        fromEmail: emailContent.fromEmail,
+      });
+    } else {
+      // Email was stored but archiving failed - this is still a partial success
+      logger.warn("Email stored but archiving failed", {
+        messageId,
+        subject: emailContent.subject,
+        fromEmail: emailContent.fromEmail,
+      });
     }
-  }
 
-  extractFromPart(payload);
-  return { bodyText, bodyHtml };
+    return { processed: true, archived };
+  } catch (error) {
+    logger.error("Error processing email", { messageId });
+    return { processed: false, archived: false };
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as EmailProcessingJobData;
-    const {
-      emailAddress,
-      historyId,
-      userId,
-      accountId,
-      accessToken,
-      refreshToken,
-      expiresAt,
-    } = body;
+    const data = (await request.json()) as EmailProcessingJobData;
 
-    if (!emailAddress || !historyId || !userId || !accountId || !accessToken) {
-      return NextResponse.json(
-        { error: "Invalid request body" },
-        { status: 400 }
-      );
-    }
-
-    const gmailWatch = await prisma.gmailWatch.findFirst({
-      where: {
-        userId,
-        accountEmail: emailAddress,
-        isActive: true,
-        expiresAt: { gt: new Date() },
-      },
+    logger.debug("Processing email job", {
+      emailAddress: data.emailAddress,
+      historyId: data.historyId,
+      userId: data.userId,
+      accountId: data.accountId,
     });
 
-    if (!gmailWatch) {
-      return NextResponse.json({ error: "No active watch" }, { status: 404 });
-    }
+    // Validate request and get watch
+    const gmailWatch = await validateRequest(data);
 
-    let gmail;
-    try {
-      gmail = await createGmailClient({
-        emailAddress,
-        historyId,
-        userId,
-        accountId,
-        accessToken,
-        refreshToken,
-        expiresAt,
-      });
-    } catch (authError) {
-      await prisma.gmailWatch.update({
-        where: { id: gmailWatch.id },
-        data: { isActive: false },
-      });
+    // Prepare Gmail client options
+    const clientOptions = {
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      expiresAt: data.expiresAt,
+      accountId: data.accountId,
+    };
 
-      return NextResponse.json(
-        {
-          error: "Authentication failed",
-          details:
-            authError instanceof Error
-              ? authError.message
-              : "Unknown auth error",
-        },
-        { status: 401 }
-      );
-    }
+    // Test Gmail connection if no messages found later
+    const testConnection = async () => {
+      logger.debug("Testing Gmail API access");
+      const isConnected = await gmailService.testConnection(clientOptions);
+      logger.info("Gmail API test result", { connected: isConnected });
+    };
 
-    const historyResponse = await gmail.users.history.list({
-      userId: "me",
-      startHistoryId: gmailWatch.historyId,
-      labelId: "INBOX",
+    // Find new messages
+    const searchResult = await gmailService.findNewMessages(
+      clientOptions,
+      gmailWatch.historyId,
+      data.historyId
+    );
+
+    const { messageIds, source } = searchResult;
+    logger.info("Found messages to process", {
+      count: messageIds.size,
+      source,
     });
 
-    const history = historyResponse.data.history || [];
-    const messageIds = new Set<string>();
-
-    for (const historyItem of history) {
-      if (historyItem.messagesAdded) {
-        for (const messageAdded of historyItem.messagesAdded) {
-          if (messageAdded.message?.id) {
-            messageIds.add(messageAdded.message.id);
-          }
-        }
-      }
+    // If no messages found, test the connection
+    if (messageIds.size === 0) {
+      await testConnection();
     }
 
-    let processedCount = 0;
+    // Process each message
+    const stats: ProcessingStats = {
+      processed: 0,
+      duplicates: 0,
+      archived: 0,
+      messages: Array.from(messageIds),
+    };
+
     for (const messageId of messageIds) {
-      try {
-        const existingEmail = await prisma.email.findUnique({
-          where: { gmailId: messageId },
-        });
+      const { processed, archived } = await processEmail(
+        messageId,
+        data.userId,
+        data.emailAddress,
+        clientOptions
+      );
 
-        if (existingEmail) continue;
-
-        const messageResponse = await gmail.users.messages.get({
-          userId: "me",
-          id: messageId,
-          format: "full",
-        });
-
-        const message = messageResponse.data;
-        const headers = message.payload?.headers || [];
-
-        const subject =
-          headers.find((h) => h.name === "Subject")?.value || "No Subject";
-        const fromHeader = headers.find((h) => h.name === "From")?.value || "";
-        const toHeader = headers.find((h) => h.name === "To")?.value || "";
-        const dateHeader = headers.find((h) => h.name === "Date")?.value;
-
-        const fromEmail = fromHeader.match(/<(.+)>/)
-          ? fromHeader.match(/<(.+)>/)![1]
-          : fromHeader;
-        const fromName = fromHeader
-          .replace(/<.+>/, "")
-          .trim()
-          .replace(/"/g, "");
-        const toEmail = toHeader.match(/<(.+)>/)
-          ? toHeader.match(/<(.+)>/)![1]
-          : toHeader;
-        const receivedAt = dateHeader ? new Date(dateHeader) : new Date();
-
-        const { bodyText, bodyHtml } = message.payload
-          ? extractEmailBody(message.payload)
-          : { bodyText: "", bodyHtml: "" };
-
-        console.log(`Processing email: ${subject} from ${fromEmail}`);
-
-        await prisma.email.create({
-          data: {
-            gmailId: messageId,
-            userId,
-            accountEmail: emailAddress,
-            subject,
-            fromEmail,
-            fromName: fromName || null,
-            toEmail,
-            bodyText: bodyText || null,
-            bodyHtml: bodyHtml || null,
-            receivedAt,
-            processedAt: new Date(),
-            aiSummary: null, // TODO: Add AI-generated summary of email content
-            categoryId: null, // TODO: Add categoryId
-          },
-        });
-
-        processedCount++;
-      } catch (error) {
-        console.error(`Error processing message ${messageId}:`, error);
+      if (processed) {
+        stats.processed++;
+        if (archived) {
+          stats.archived++;
+        }
+      } else {
+        stats.duplicates++;
       }
     }
 
+    logger.info("Processing completed", {
+      processed: stats.processed,
+      duplicates: stats.duplicates,
+      archived: stats.archived,
+      total: messageIds.size,
+    });
+
+    // Update history ID if we processed any messages
     if (messageIds.size > 0) {
       await prisma.gmailWatch.update({
         where: { id: gmailWatch.id },
-        data: { historyId: String(historyId) },
+        data: { historyId: String(data.historyId) },
+      });
+
+      logger.debug("Updated historyId", {
+        from: gmailWatch.historyId,
+        to: data.historyId,
       });
     }
 
-    return NextResponse.json({
-      success: true,
-      processed: processedCount,
-      messages: Array.from(messageIds),
-    });
+    const result: EmailProcessingResult = {
+      processed: stats.processed,
+      duplicates: stats.duplicates,
+      archived: stats.archived,
+      messages: stats.messages,
+    };
+
+    return responses.success(result);
   } catch (error) {
-    console.error("Email processing worker error:", error);
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    if (error instanceof Error && error.message === "No active watch found") {
+      return responses.notFound("No active watch");
+    }
+
+    if (error instanceof Error && error.message === "Invalid request body") {
+      return responses.badRequest("Invalid request body");
+    }
+
+    logger.error("Email processing worker error");
+    return responses.internalError("Email processing failed");
   }
 }
