@@ -26,6 +26,7 @@ async function getAllGmailClients() {
       userId: user.id,
       provider: "google",
     },
+    orderBy: { createdAt: "asc" },
   });
 
   if (accounts.length === 0) {
@@ -62,6 +63,9 @@ async function getAllGmailClients() {
                 where: { id: account.id },
                 data: {
                   access_token: credentials.access_token,
+                  ...(credentials.refresh_token && {
+                    refresh_token: credentials.refresh_token,
+                  }),
                   expires_at: credentials.expiry_date
                     ? Math.floor(credentials.expiry_date / 1000)
                     : null,
@@ -93,7 +97,20 @@ async function getAllGmailClients() {
         }
 
         const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-        return { gmail, account };
+
+        // Get email address for this account
+        let emailAddress = account.providerAccountId;
+        try {
+          const profile = await gmail.users.getProfile({ userId: "me" });
+          emailAddress = profile.data.emailAddress || account.providerAccountId;
+        } catch (error) {
+          console.warn(
+            `Failed to get profile for account ${account.id}:`,
+            error
+          );
+        }
+
+        return { gmail, account, emailAddress };
       })
   );
 
@@ -123,14 +140,16 @@ export async function testGmailConnectionAction() {
     const { gmailClients } = await getAllGmailClients();
 
     const results = await Promise.allSettled(
-      gmailClients.map(async ({ gmail, account }): Promise<TestResult> => {
-        const profile = await gmail.users.getProfile({ userId: "me" });
-        return {
-          email: profile.data.emailAddress || "Unknown",
-          accountId: account.providerAccountId,
-          success: true,
-        };
-      })
+      gmailClients.map(
+        async ({ gmail, account, emailAddress }): Promise<TestResult> => {
+          await gmail.users.getProfile({ userId: "me" });
+          return {
+            email: emailAddress,
+            accountId: account.providerAccountId,
+            success: true,
+          };
+        }
+      )
     );
 
     const successful = results
@@ -175,23 +194,25 @@ export async function startGmailWatchAction() {
     const { user, gmailClients } = await getAllGmailClients();
 
     const results = await Promise.allSettled(
-      gmailClients.map(async ({ account }): Promise<WatchResult> => {
-        const result = await setupGmailWatchForUser(
-          user.id,
-          account.access_token!,
-          account.refresh_token || undefined
-        );
+      gmailClients.map(
+        async ({ account, emailAddress }): Promise<WatchResult> => {
+          const result = await setupGmailWatchForUser(
+            user.id,
+            account.access_token!,
+            account.refresh_token || undefined
+          );
 
-        if (!result.success) {
-          throw new Error(result.error);
+          if (!result.success) {
+            throw new Error(result.error);
+          }
+
+          return {
+            accountEmail: result.accountEmail!,
+            status: result.status!,
+            expiresAt: result.expiresAt!,
+          };
         }
-
-        return {
-          accountEmail: result.accountEmail!,
-          status: result.status!,
-          expiresAt: result.expiresAt!,
-        };
-      })
+      )
     );
 
     const successful = results
