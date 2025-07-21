@@ -2,6 +2,7 @@ import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import type { GenerativeModel } from "@google/generative-ai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { UnsubscribeLink } from "./unsubscribe.service";
 
 export interface EmailClassificationResult {
   categoryId: string | null;
@@ -290,6 +291,66 @@ Summary:`;
 
       // Fallback to basic summary
       return `Email from ${emailContent.fromEmail} regarding: ${emailContent.subject}`;
+    }
+  }
+
+  /**
+   * Use Gemini to analyze email content for unsubscribe links (AI fallback).
+   */
+  async analyzeUnsubscribeLinks(
+    emailContent: EmailContent
+  ): Promise<UnsubscribeLink[]> {
+    const prompt = `Find all unsubscribe links in the following email. Return a JSON array of objects with { url, text, type, confidence } for each link. Type is one of 'link', 'button', or 'email'. Only include real unsubscribe options.\n\nEmail HTML:\n${
+      emailContent.bodyHtml || ""
+    }\n\nEmail Text:\n${emailContent.bodyText || ""}`;
+    const result = await this.model.generateContent(prompt);
+    const text = result.response.text();
+    try {
+      // Use a compatible regex for JSON array extraction
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
+      const links = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(links)) {
+        return links
+          .filter((l) => l.url)
+          .map((l) => ({
+            url: l.url,
+            text: l.text || "Unsubscribe",
+            type: l.type || "link",
+            confidence: typeof l.confidence === "number" ? l.confidence : 0.7,
+          }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Use Gemini to analyze an unsubscribe page and return actions to automate.
+   */
+  async analyzeUnsubscribePage(
+    pageHtml: string,
+    pageUrl: string,
+    userEmail: string
+  ): Promise<{ type: string; selector: string; value?: string }[]> {
+    const prompt = `You are an AI agent helping a user unsubscribe from emails. Given the HTML of an unsubscribe web page, return a JSON array of actions to perform in order to complete the unsubscribe process.\n\nEach action should be an object with { type, selector, value? }.\n- type: 'click', 'fill', or 'select'.\n- selector: a CSS selector for the element.\n- value: (for 'fill' or 'select') the value to use.\n\nThe user's email is: ${userEmail}\n\nPage URL: ${pageUrl}\n\nPage HTML:\n${pageHtml.substring(
+      0,
+      4000
+    )}\n\nRespond ONLY with the JSON array.`;
+    const result = await this.model.generateContent(prompt);
+    const text = result.response.text();
+    try {
+      // Use a compatible regex for JSON array extraction
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
+      const actions = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(actions)) {
+        return actions.filter((a) => a.type && a.selector);
+      }
+      return [];
+    } catch {
+      return [];
     }
   }
 
