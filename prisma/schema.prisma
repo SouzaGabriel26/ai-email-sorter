@@ -100,15 +100,16 @@ model Email {
 }
 
 model GmailWatch {
-  id           String   @id @default(cuid())
-  userId       String
-  accountEmail String // Gmail account being watched
-  historyId    String // Last processed Gmail history ID
-  topicName    String // Pub/Sub topic name
-  expiresAt    DateTime // When the watch expires (7 days max)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  accountEmail    String // Gmail account being watched
+  historyId       String // Last processed Gmail history ID
+  topicName       String // Pub/Sub topic name
+  expiresAt       DateTime // When the watch expires (7 days max)
+  isActive        Boolean   @default(true)
+  lastProcessedAt DateTime? // When emails were last processed (for "from now on" filtering)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
