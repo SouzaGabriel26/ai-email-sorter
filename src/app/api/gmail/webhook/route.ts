@@ -2,7 +2,6 @@ import { responses } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { publishEmailProcessingJob } from "@/lib/qstash";
-import { gmailService } from "@/services/gmail.service";
 import { NextRequest } from "next/server";
 
 interface PubSubMessage {
@@ -19,9 +18,11 @@ interface GmailNotification {
   historyId: string;
 }
 
-// Temporary circuit breaker to prevent endless loops during debugging
+// Enhanced rate limiting and deduplication
 const recentRequests = new Map<string, number>();
-const MAX_REQUESTS_PER_MINUTE = 10;
+const processedNotifications = new Map<string, number>(); // Track processed historyIds
+const MAX_REQUESTS_PER_MINUTE = 8; // Reduced from 10
+const NOTIFICATION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function checkRateLimit(emailAddress: string): boolean {
   const now = Date.now();
@@ -39,11 +40,10 @@ function checkRateLimit(emailAddress: string): boolean {
 
   recentRequests.set(key, count + 1);
 
-  // Clean up old entries
+  // Clean up old entries every request
   for (const [k, _] of recentRequests) {
     const keyTime = parseInt(k.split("-").pop() || "0");
     if (now - keyTime * 60000 > 120000) {
-      // Remove entries older than 2 minutes
       recentRequests.delete(k);
     }
   }
@@ -51,19 +51,88 @@ function checkRateLimit(emailAddress: string): boolean {
   return true;
 }
 
+function checkNotificationDeduplication(
+  emailAddress: string,
+  historyId: string
+): boolean {
+  const key = `${emailAddress}-${historyId}`;
+  const now = Date.now();
+
+  // Check if we've already processed this notification recently
+  const lastProcessed = processedNotifications.get(key);
+  if (lastProcessed && now - lastProcessed < NOTIFICATION_CACHE_TTL) {
+    logger.info("Skipping recently processed notification", {
+      emailAddress,
+      historyId,
+      lastProcessedAgo: now - lastProcessed,
+    });
+    return false;
+  }
+
+  // Mark as processed
+  processedNotifications.set(key, now);
+
+  // Clean up old entries
+  for (const [k, timestamp] of processedNotifications) {
+    if (now - timestamp > NOTIFICATION_CACHE_TTL * 2) {
+      processedNotifications.delete(k);
+    }
+  }
+
+  return true;
+}
+
+// Optimized account matching with caching
+interface CachedAccountMatch {
+  data: {
+    user: {
+      id: string;
+      accounts: Array<{
+        id: string;
+        access_token: string | null;
+        refresh_token: string | null;
+        expires_at: number | null;
+      }>;
+    };
+    account: {
+      id: string;
+      access_token: string | null;
+      refresh_token: string | null;
+      expires_at: number | null;
+    };
+  } | null;
+  timestamp: number;
+}
+
+const accountCache = new Map<string, CachedAccountMatch>();
+const ACCOUNT_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
 async function findMatchingAccount(emailAddress: string) {
+  const cacheKey = emailAddress;
+  const cached = accountCache.get(cacheKey);
+
+  if (cached && Date.now() - cached.timestamp < ACCOUNT_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Find the watch and associated user/account
   const gmailWatch = await prisma.gmailWatch.findFirst({
     where: {
       accountEmail: emailAddress,
       isActive: true,
+      expiresAt: { gt: new Date() }, // Only active, non-expired watches
     },
     include: {
       user: {
         include: {
           accounts: {
-            where: { provider: "google" },
+            where: {
+              provider: "google",
+              access_token: { not: null }, // Only accounts with valid tokens
+            },
             select: {
               id: true,
+              providerAccountId: true,
               access_token: true,
               refresh_token: true,
               expires_at: true,
@@ -74,55 +143,86 @@ async function findMatchingAccount(emailAddress: string) {
     },
   });
 
-  if (!gmailWatch?.user?.accounts[0]?.access_token) {
+  if (!gmailWatch?.user?.accounts[0]) {
     logger.warn("No active watch or account found", { emailAddress });
+
+    // Cache negative result for short time to avoid repeated queries
+    accountCache.set(cacheKey, {
+      data: null,
+      timestamp: Date.now(),
+    });
+
     return null;
   }
 
-  const user = gmailWatch.user;
+  // **CRITICAL FIX**: Find the specific account that matches the emailAddress
+  // We need to check each account's actual Gmail address using the Gmail API
+  let matchingAccount = null;
 
-  logger.debug("Looking for OAuth account matching email", {
-    emailAddress,
-    accountCount: user.accounts.length,
-  });
-
-  // Find the correct OAuth account for this Gmail email address
-  for (const account of user.accounts) {
-    if (!account.access_token) {
-      logger.debug("Skipping account - no access token", {
-        accountId: account.id,
-      });
-      continue;
-    }
-
+  for (const account of gmailWatch.user.accounts) {
     try {
-      const profileEmail = await gmailService.getProfile({
-        accessToken: account.access_token,
-        refreshToken: account.refresh_token || undefined,
-        expiresAt: account.expires_at || undefined,
-        accountId: account.id,
+      // Create OAuth2 client for this account
+      const { google } = await import("googleapis");
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+
+      oauth2Client.setCredentials({
+        access_token: account.access_token,
+        refresh_token: account.refresh_token,
       });
 
-      if (profileEmail === emailAddress) {
+      // Get the Gmail profile to find the actual email address
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+      const profile = await gmail.users.getProfile({ userId: "me" });
+      const accountEmail = profile.data.emailAddress;
+
+      if (accountEmail === emailAddress) {
+        matchingAccount = account;
         logger.info("Found matching account", {
           accountId: account.id,
-          emailAddress,
-        });
-        return { user, account };
-      } else {
-        logger.debug("Account email doesn't match", {
-          accountId: account.id,
-          profileEmail,
+          accountEmail,
           targetEmail: emailAddress,
         });
+        break;
       }
     } catch (error) {
-      logger.warn("Failed to test account", { accountId: account.id });
+      logger.warn("Failed to check account email", {
+        accountId: account.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Continue checking other accounts
     }
   }
 
-  logger.warn("No matching OAuth account found", { emailAddress });
-  return null;
+  if (!matchingAccount) {
+    logger.warn("No matching account found for email address", {
+      emailAddress,
+      availableAccounts: gmailWatch.user.accounts.map((a) => a.id).join(", "),
+    });
+
+    // Cache negative result
+    accountCache.set(cacheKey, {
+      data: null,
+      timestamp: Date.now(),
+    });
+
+    return null;
+  }
+
+  const result = {
+    user: gmailWatch.user,
+    account: matchingAccount, // Use the specific matching account
+  };
+
+  // Cache positive result
+  accountCache.set(cacheKey, {
+    data: result,
+    timestamp: Date.now(),
+  });
+
+  return result;
 }
 
 export async function POST(request: NextRequest) {
@@ -140,14 +240,7 @@ export async function POST(request: NextRequest) {
     // Step 1: Parse the Pub/Sub message
     const body = (await request.json()) as PubSubMessage;
 
-    logger.debug("Webhook request received", {
-      messageId: body.message?.messageId,
-      publishTime: body.message?.publishTime,
-      subscription: body.subscription,
-    });
-
     if (!body.message?.data) {
-      logger.debug("Received empty Pub/Sub message");
       return responses.success();
     }
 
@@ -180,7 +273,16 @@ export async function POST(request: NextRequest) {
       messageId: body.message.messageId,
     });
 
-    // Step 3: Rate limit check to prevent endless loops
+    // Step 3: Enhanced deduplication checks
+    if (
+      !checkNotificationDeduplication(
+        gmailNotification.emailAddress,
+        gmailNotification.historyId
+      )
+    ) {
+      return responses.success(); // Already processed recently
+    }
+
     if (!checkRateLimit(gmailNotification.emailAddress)) {
       logger.error("Rate limit exceeded - possible endless loop detected", {
         emailAddress: gmailNotification.emailAddress,
@@ -189,7 +291,7 @@ export async function POST(request: NextRequest) {
       return responses.success(); // Still acknowledge to prevent further retries
     }
 
-    // Step 4: Find matching account
+    // Step 4: Find matching account (optimized with caching)
     const matchResult = await findMatchingAccount(
       gmailNotification.emailAddress
     );
@@ -202,7 +304,7 @@ export async function POST(request: NextRequest) {
 
     const { user, account } = matchResult;
 
-    // Step 5: Check for duplicate notifications (same historyId already processed)
+    // Step 5: Check database for duplicate historyId processing
     const existingWatch = await prisma.gmailWatch.findFirst({
       where: {
         userId: user.id,
@@ -223,7 +325,7 @@ export async function POST(request: NextRequest) {
       return responses.success(); // Acknowledge duplicate to stop retries
     }
 
-    // Step 6: Publish background job
+    // Step 6: Publish background job with deduplication
     try {
       await publishEmailProcessingJob({
         emailAddress: gmailNotification.emailAddress,
@@ -240,10 +342,10 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         accountId: account.id,
         messageId: body.message.messageId,
+        processingTime: Date.now() - startTime,
       });
     } catch (qstashError) {
       // Even if QStash fails, we should acknowledge the webhook to prevent infinite retries
-      // The email processing will be lost, but we log it for manual intervention
       logger.error("Critical: Failed to queue email processing job", {
         emailAddress: gmailNotification.emailAddress,
         userId: user.id,
@@ -265,16 +367,18 @@ export async function POST(request: NextRequest) {
       processingTime: Date.now() - startTime,
     });
     return responses.success();
-  } finally {
-    logger.debug("Webhook request completed", {
-      processingTime: Date.now() - startTime,
-    });
   }
 }
 
+// Health check endpoint
 export async function GET() {
   return responses.success({
-    message: "Gmail webhook endpoint is active",
+    status: "active",
     timestamp: new Date().toISOString(),
+    cacheStats: {
+      accountCacheSize: accountCache.size,
+      processedNotificationsSize: processedNotifications.size,
+      recentRequestsSize: recentRequests.size,
+    },
   });
 }
