@@ -131,7 +131,7 @@ interface TestResult {
 
 interface WatchResult {
   accountEmail: string;
-  status: "started" | "already_active";
+  status: "started" | "already_active" | "cleaned_and_started";
   expiresAt: Date;
 }
 
