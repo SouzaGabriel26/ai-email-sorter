@@ -10,20 +10,17 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
 import {
+  Activity,
   AlertTriangle,
   CheckCircle,
-  Clock,
-  ExternalLink,
   Mail,
   MoreVertical,
+  Pause,
   Plus,
   RefreshCw,
-  Shield,
   Trash2,
   Users,
   Wifi,
@@ -46,9 +43,11 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
     isLoading,
     isDisconnecting,
     isSettingUpWatch,
+    isStoppingWatch,
     isConnecting,
     disconnectAccount,
     setupWatch,
+    stopWatch,
     connectAccount,
     refreshAccounts,
     totalActiveAccounts,
@@ -96,6 +95,20 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
     }
   };
 
+  const handleStopWatch = async (accountId: string, email: string) => {
+    const result = await stopWatch(accountId);
+
+    if (result.success) {
+      toast.success("Monitoring stopped", {
+        description: result.message,
+      });
+    } else {
+      toast.error("Failed to stop monitoring", {
+        description: result.error,
+      });
+    }
+  };
+
   const getAccountInitials = (name: string, email: string) => {
     if (name && name !== "Gmail User" && name !== "Connection Error" && name !== "Token Expired") {
       return name.split(" ").map(n => n[0]).join("").toUpperCase();
@@ -135,16 +148,19 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
 
   const activeAccounts = accounts.filter(acc => acc.isActive);
   const inactiveAccounts = accounts.filter(acc => !acc.isActive);
+  const totalEmails = accounts.reduce((sum, acc) => sum + (acc.totalEmails || 0), 0);
 
   return (
-    <Card className="lg:col-span-1">
-      <CardHeader>
+    <Card className="border-2 border-green-100 bg-gradient-to-br from-white to-green-50/30 shadow-lg">
+      <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Users className="h-5 w-5 text-blue-600" />
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Users className="h-6 w-6 text-green-600" />
+            </div>
             <div>
-              <CardTitle>Connected Accounts</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-xl font-bold text-gray-900">Connected Accounts</CardTitle>
+              <CardDescription className="text-gray-600">
                 Manage Gmail accounts for AI email processing
               </CardDescription>
             </div>
@@ -154,7 +170,8 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
             size="sm"
             onClick={refreshAccounts}
             disabled={isLoading}
-            className="shrink-0"
+            className="shrink-0 hover:bg-green-100"
+            aria-label="Refresh accounts"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
@@ -162,8 +179,8 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+        {/* Quick Stats - Enhanced */}
+        <div className="grid grid-cols-3 gap-4 p-4 bg-white rounded-lg border border-green-100">
           <div className="text-center">
             <div className="flex items-center justify-center mb-1">
               <CheckCircle className="h-4 w-4 text-green-600 mr-1" />
@@ -186,43 +203,43 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
             <div className="flex items-center justify-center mb-1">
               <Mail className="h-4 w-4 text-purple-600 mr-1" />
               <span className="text-lg font-bold text-purple-600">
-                {isLoading ? "..." : accounts.reduce((sum, acc) => sum + (acc.totalEmails || 0), 0)}
+                {isLoading ? "..." : totalEmails}
               </span>
             </div>
             <p className="text-xs text-gray-600">Emails</p>
           </div>
         </div>
 
-        {/* Account List */}
+        {/* Account List - Enhanced */}
         {isLoading ? (
           <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-            <p className="text-sm text-gray-500 mt-2">Loading accounts...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4"></div>
+            <p className="text-sm text-gray-500">Loading accounts...</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {/* Active Accounts */}
+            {/* Active Accounts - Enhanced */}
             {activeAccounts.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-                  <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
+                <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                  <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
                   Active Accounts ({activeAccounts.length})
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {activeAccounts.map((account) => (
                     <div
                       key={account.id}
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-between p-4 border border-green-200 rounded-lg hover:bg-green-50 transition-all duration-200 bg-white/50"
                     >
                       <div className="flex items-center space-x-3 flex-1 min-w-0">
-                        <Avatar className="h-10 w-10 shrink-0">
+                        <Avatar className="h-12 w-12 shrink-0 border-2 border-green-200">
                           <AvatarImage src={account.image} alt={account.name} />
-                          <AvatarFallback className="text-xs bg-blue-100 text-blue-700">
+                          <AvatarFallback className="text-sm bg-green-100 text-green-700 font-medium">
                             {getAccountInitials(account.name, account.email)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className="text-sm font-semibold text-gray-900 truncate">
                             {account.email}
                           </p>
                           <div className="flex items-center space-x-2 mt-1">
@@ -239,91 +256,80 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
-                            {account.lastSyncAt && (
-                              <span className="flex items-center">
-                                <Clock className="h-3 w-3 mr-1" />
-                                Last sync: {formatRelativeTime(account.lastSyncAt)}
-                              </span>
-                            )}
-                            {account.watchExpiresAt && account.hasActiveWatch && (
-                              <span className="flex items-center">
-                                <Shield className="h-3 w-3 mr-1" />
-                                Expires: {new Date(account.watchExpiresAt).toLocaleDateString()}
-                              </span>
-                            )}
-                          </div>
+                          {account.lastSyncAt && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Last sync: {formatRelativeTime(account.lastSyncAt)}
+                            </p>
+                          )}
                         </div>
                       </div>
 
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                      <div className="flex items-center space-x-2 ml-4">
+                        {!account.hasActiveWatch && account.isActive && (
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            disabled={isDisconnecting === account.id || isSettingUpWatch === account.id}
-                            className="shrink-0"
+                            onClick={() => handleSetupWatch(account.id, account.email)}
+                            disabled={isSettingUpWatch === account.id}
+                            className="text-xs border-green-200 hover:bg-green-50"
                           >
-                            <MoreVertical className="h-4 w-4" />
+                            <Activity className="h-3 w-3 mr-1" />
+                            {isSettingUpWatch === account.id ? "Setting up..." : "Monitor"}
                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem
-                            onClick={() => window.open(`https://mail.google.com/mail/u/${account.email}`, '_blank')}
-                          >
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            Open Gmail
-                          </DropdownMenuItem>
+                        )}
 
-                          {!account.hasActiveWatch && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
                             <DropdownMenuItem
-                              onClick={() => handleSetupWatch(account.id, account.email)}
-                              disabled={isSettingUpWatch === account.id}
+                              onClick={() => handleDisconnectAccount(account.id, account.email)}
+                              disabled={isDisconnecting === account.id}
+                              className="text-red-600"
                             >
-                              <Wifi className="h-4 w-4 mr-2" />
-                              {isSettingUpWatch === account.id ? "Enabling..." : "Enable Monitoring"}
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              {isDisconnecting === account.id ? "Disconnecting..." : "Disconnect"}
                             </DropdownMenuItem>
-                          )}
-
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDisconnectAccount(account.id, account.email)}
-                            disabled={isDisconnecting === account.id || activeAccounts.length <= 1}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            {isDisconnecting === account.id ? "Disconnecting..." : "Disconnect"}
-                          </DropdownMenuItem>
-                          {activeAccounts.length <= 1 && (
-                            <p className="text-xs text-gray-500 px-2 py-1">
-                              Cannot disconnect last account
-                            </p>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                            {account.hasActiveWatch && (
+                              <DropdownMenuItem
+                                onClick={() => handleStopWatch(account.id, account.email)}
+                                disabled={isStoppingWatch === account.id}
+                                className="text-yellow-600"
+                              >
+                                <Pause className="h-4 w-4 mr-2" />
+                                {isStoppingWatch === account.id ? "Stopping..." : "Stop Monitor"}
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Inactive Accounts */}
+            {/* Inactive Accounts - Enhanced */}
             {inactiveAccounts.length > 0 && (
               <div>
-                {activeAccounts.length > 0 && <Separator className="my-4" />}
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-medium text-gray-700 flex items-center">
-                    <AlertTriangle className="h-4 w-4 mr-1 text-amber-500" />
-                    Connection Issues ({inactiveAccounts.length})
+                    <AlertTriangle className="h-4 w-4 mr-2 text-amber-600" />
+                    Inactive Accounts ({inactiveAccounts.length})
                   </h4>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowInactive(!showInactive)}
+                    className="text-xs"
                   >
                     {showInactive ? "Hide" : "Show"}
                   </Button>
                 </div>
+
                 {showInactive && (
                   <div className="space-y-2">
                     {inactiveAccounts.map((account) => (
@@ -350,7 +356,7 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
                           size="sm"
                           onClick={() => handleDisconnectAccount(account.id, account.email)}
                           disabled={isDisconnecting === account.id}
-                          className="shrink-0"
+                          className="shrink-0 border-amber-200 hover:bg-amber-100"
                         >
                           <Trash2 className="h-4 w-4 mr-1" />
                           {isDisconnecting === account.id ? "Removing..." : "Remove"}
@@ -362,22 +368,26 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
               </div>
             )}
 
-            {/* Empty State */}
+            {/* Empty State - Enhanced */}
             {accounts.length === 0 && !isLoading && (
-              <div className="text-center py-8">
-                <Users className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                <h3 className="text-sm font-medium text-gray-900 mb-1">No accounts connected</h3>
-                <p className="text-xs text-gray-500 mb-4">Connect your Gmail account to get started</p>
+              <div className="text-center py-12 px-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Users className="h-8 w-8 text-green-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Connect Your Gmail Account</h3>
+                <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                  Connect your Gmail account to start automatically processing and organizing your emails with AI.
+                </p>
               </div>
             )}
           </div>
         )}
 
-        {/* Connect Account Button */}
+        {/* Connect Account Button - Enhanced */}
         <div className="pt-4">
           <Button
             variant="outline"
-            className="w-full"
+            className="w-full border-green-200 hover:bg-green-50 text-green-700"
             onClick={handleConnectAccount}
             disabled={isConnecting || isLoading}
           >
@@ -386,12 +396,12 @@ export function ConnectedAccountsCard({ session }: ConnectedAccountsCardProps) {
           </Button>
         </div>
 
-        {/* Help Text */}
+        {/* Help Text - Enhanced */}
         <div className="text-center">
           <p className="text-xs text-gray-500 leading-relaxed">
             Connect multiple Gmail accounts to monitor and process emails from all your inboxes.
             <br />
-            <span className="text-amber-600">⚠️ Maximum 10 accounts per user</span>
+            <span className="text-amber-600 font-medium">⚠️ Maximum 10 accounts per user</span>
           </p>
         </div>
       </CardContent>

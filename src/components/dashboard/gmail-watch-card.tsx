@@ -1,76 +1,23 @@
 "use client";
 
-import { testGmailConnectionAction } from "@/app/actions/gmail";
 import { useGmailWatch } from "@/app/hooks/useGmailWatch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertCircle, Mail, Play, Square, TestTube } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
+import { AlertCircle, Clock, Mail, RefreshCw, Settings, Wifi, WifiOff } from "lucide-react";
 
-export function GmailWatchCard() {
+interface GmailWatchCardProps {
+  onRefresh?: () => void;
+}
+
+export function GmailWatchCard({ onRefresh }: GmailWatchCardProps) {
   const {
     watchStatus,
     isLoading,
-    isStarting,
-    isStopping,
     startWatch,
     stopWatch,
+    refreshStatus,
   } = useGmailWatch();
-
-  const [isTesting, setIsTesting] = useState(false);
-
-  async function handleTestConnection() {
-    try {
-      setIsTesting(true);
-      const result = await testGmailConnectionAction();
-
-      if (result.success) {
-        toast.success("Gmail connections tested!", {
-          description: result.message,
-        });
-      } else {
-        toast.error("Gmail connection failed", {
-          description: result.error,
-        });
-      }
-    } catch {
-      toast.error("Connection test failed", {
-        description: "Please try again or check your authentication.",
-      });
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  async function handleStartWatch() {
-    const result = await startWatch();
-
-    if (result.success) {
-      toast.success("Gmail monitoring updated!", {
-        description: result.message,
-      });
-    } else {
-      toast.error("Failed to start Gmail monitoring", {
-        description: result.error || "Please try again.",
-      });
-    }
-  }
-
-  async function handleStopWatch() {
-    const result = await stopWatch();
-
-    if (result.success) {
-      toast.success("Gmail monitoring stopped", {
-        description: result.message,
-      });
-    } else {
-      toast.error("Failed to stop Gmail monitoring", {
-        description: result.error || "Please try again.",
-      });
-    }
-  }
 
   const getStatusInfo = () => {
     if (!watchStatus.totalAccounts) {
@@ -88,109 +35,148 @@ export function GmailWatchCard() {
     return `${watchStatus.totalAccounts} account${watchStatus.totalAccounts > 1 ? 's' : ''} connected, not monitored`;
   };
 
+  const getStatusColor = () => {
+    if (watchStatus.activeWatches === watchStatus.totalAccounts && watchStatus.totalAccounts && watchStatus.totalAccounts > 0) {
+      return "bg-green-100 text-green-800 border-green-200";
+    }
+    if (watchStatus.activeWatches && watchStatus.activeWatches > 0) {
+      return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    }
+    return "bg-gray-100 text-gray-800 border-gray-200";
+  };
+
+  const setupAllWatches = async () => {
+    const result = await startWatch();
+    // Handle result if needed
+  };
+
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      onRefresh();
+    } else {
+      await refreshStatus();
+    }
+  };
+
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-2 border-gray-100 bg-gradient-to-br from-white to-gray-50/30 shadow-lg h-full">
+      <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Mail className="h-5 w-5 text-blue-600" />
-            <CardTitle>Gmail Monitoring</CardTitle>
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <Mail className="h-6 w-6 text-gray-600" />
+            </div>
+            <div>
+              <CardTitle className="text-xl font-bold text-gray-900">Gmail Monitoring</CardTitle>
+              <CardDescription className="text-gray-600">
+                Monitor your Gmail accounts for new emails
+              </CardDescription>
+            </div>
           </div>
-          <Badge variant={watchStatus.isActive ? "default" : "secondary"}>
-            {isLoading ? "Checking..." : watchStatus.isActive ? "Active" : "Inactive"}
-          </Badge>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="shrink-0 hover:bg-gray-100"
+              aria-label="Refresh monitoring status"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Badge
+              variant={watchStatus.isActive ? "default" : "secondary"}
+              className={getStatusColor()}
+            >
+              {isLoading ? "Checking..." : watchStatus.isActive ? "Active" : "Inactive"}
+            </Badge>
+          </div>
         </div>
-        <CardDescription>
-          Monitor your Gmail accounts for new emails to process automatically
-        </CardDescription>
       </CardHeader>
+
       <CardContent className="space-y-4">
         {isLoading ? (
-          <div className="text-center py-4">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900 mx-auto"></div>
-            <p className="text-sm text-gray-500 mt-2">Checking status...</p>
+          <div className="text-center py-6">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-500">Checking status...</p>
           </div>
         ) : (
           <>
-            {/* Status Information */}
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm font-medium">
-                {getStatusInfo()}
-              </p>
+            {/* Status Information - Compact */}
+            <div className="text-center p-4 bg-white rounded-lg border border-gray-200">
+              <div className="flex items-center justify-center mb-2">
+                {watchStatus.isActive ? (
+                  <Wifi className="h-5 w-5 text-green-600 mr-2" />
+                ) : (
+                  <WifiOff className="h-5 w-5 text-gray-400 mr-2" />
+                )}
+                <p className="text-sm font-medium text-gray-900">
+                  {getStatusInfo()}
+                </p>
+              </div>
               {watchStatus.expiresAt && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 flex items-center justify-center">
+                  <Clock className="h-3 w-3 mr-1" />
                   Expires: {new Date(watchStatus.expiresAt).toLocaleDateString()}
                 </p>
               )}
             </div>
 
-            {/* Account Details */}
+            {/* Account Details - Compact */}
             {watchStatus.accounts && watchStatus.accounts.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-gray-600">Active Watches:</p>
-                {watchStatus.accounts.map((account, index) => (
-                  <div key={index} className="flex justify-between text-xs bg-green-50 p-2 rounded">
-                    <span className="font-mono">{account.accountEmail}</span>
-                    <span className="text-gray-500">
-                      Expires {new Date(account.expiresAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
+                <p className="text-xs font-medium text-gray-600 flex items-center">
+                  <Settings className="h-3 w-3 mr-1" />
+                  Active Watches:
+                </p>
+                <div className="space-y-1">
+                  {watchStatus.accounts.slice(0, 3).map((account: { accountEmail: string; expiresAt: Date; historyId: string }, index: number) => (
+                    <div key={index} className="flex justify-between text-xs bg-green-50 p-2 rounded border border-green-100">
+                      <span className="font-mono truncate">{account.accountEmail}</span>
+                      <span className="text-gray-500 shrink-0">
+                        {new Date(account.expiresAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  ))}
+                  {watchStatus.accounts.length > 3 && (
+                    <div className="text-xs text-gray-500 text-center py-1">
+                      +{watchStatus.accounts.length - 3} more accounts
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Error Display */}
+            {/* Error Display - Compact */}
             {watchStatus.error && (
-              <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
-                <AlertCircle className="h-4 w-4" />
+              <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                <AlertCircle className="h-4 w-4 shrink-0" />
                 <span className="text-sm">{watchStatus.error}</span>
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex space-x-2">
-              {/* Test Connection Button */}
-              <Button
-                variant="outline"
-                onClick={handleTestConnection}
-                disabled={isTesting || isStarting || isStopping}
-              >
-                <TestTube className="h-4 w-4 mr-2" />
-                {isTesting ? "Testing..." : "Test"}
-              </Button>
-
-              {/* Start/Stop Monitoring Button */}
-              {watchStatus.isActive ? (
+            {/* Action Buttons - Compact */}
+            {watchStatus.totalAccounts && watchStatus.totalAccounts > 0 && watchStatus.activeWatches && watchStatus.activeWatches < watchStatus.totalAccounts && (
+              <div className="pt-2">
                 <Button
                   variant="outline"
-                  onClick={handleStopWatch}
-                  disabled={isStopping || isStarting}
-                  className="flex-1"
+                  size="sm"
+                  onClick={setupAllWatches}
+                  disabled={false}
+                  className="w-full border-gray-200 hover:bg-gray-50"
                 >
-                  <Square className="h-4 w-4 mr-2" />
-                  {isStopping ? "Stopping..." : "Stop All"}
+                  <Wifi className="h-4 w-4 mr-2" />
+                  Enable All Monitoring
                 </Button>
-              ) : (
-                <Button
-                  onClick={handleStartWatch}
-                  disabled={isStarting || isStopping}
-                  className="flex-1"
-                >
-                  <Play className="h-4 w-4 mr-2" />
-                  {isStarting ? "Starting..." : "Start Monitoring"}
-                </Button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Help Text */}
-            {!watchStatus.isActive && watchStatus.totalAccounts && watchStatus.totalAccounts > 0 && (
-              <p className="text-xs text-gray-500 text-center">
-                {watchStatus.totalAccounts > 1
-                  ? `Monitor all ${watchStatus.totalAccounts} connected Gmail accounts`
-                  : "Monitor your Gmail account for new emails"
-                }
+            <div className="text-center">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Monitoring ensures new emails are automatically processed and categorized by AI.
               </p>
-            )}
+            </div>
           </>
         )}
       </CardContent>

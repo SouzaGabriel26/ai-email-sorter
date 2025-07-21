@@ -36,6 +36,12 @@ interface SetupWatchResponse {
   error?: string;
 }
 
+interface StopWatchResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 interface ConnectAccountResponse {
   success: boolean;
   url?: string;
@@ -335,6 +341,71 @@ export async function setupWatchForAccountAction(
   } catch (error) {
     console.error("Setup watch error:", error);
     return { success: false, error: "Failed to enable monitoring" };
+  }
+}
+
+export async function stopWatchForAccountAction(
+  accountId: string
+): Promise<StopWatchResponse> {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      include: {
+        accounts: { where: { provider: "google", id: accountId } },
+      },
+    });
+
+    if (!user || !user.accounts[0]) {
+      return { success: false, error: "Account not found" };
+    }
+
+    const account = user.accounts[0];
+    if (!account.access_token) {
+      return { success: false, error: "Invalid account credentials" };
+    }
+
+    // Create Gmail client for this specific account
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+
+    oauth2Client.setCredentials({
+      access_token: account.access_token,
+      refresh_token: account.refresh_token,
+    });
+
+    const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+    // Get the account email
+    const profile = await gmail.users.getProfile({ userId: "me" });
+    const emailAddress = profile.data.emailAddress!;
+
+    // Stop the watch for this specific account
+    await gmail.users.stop({ userId: "me" });
+
+    // Update the database to mark this watch as inactive
+    await prisma.gmailWatch.updateMany({
+      where: {
+        userId: user.id,
+        accountEmail: emailAddress,
+        isActive: true,
+      },
+      data: { isActive: false },
+    });
+
+    return {
+      success: true,
+      message: `Gmail monitoring stopped for ${emailAddress}`,
+    };
+  } catch (error) {
+    console.error("Stop watch error:", error);
+    return { success: false, error: "Failed to stop monitoring" };
   }
 }
 

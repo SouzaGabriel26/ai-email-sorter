@@ -54,5 +54,6 @@ export function useCategories() {
     isLoading,
     isCreating,
     createCategory,
+    refetch: fetchCategories,
   };
 }

@@ -5,6 +5,7 @@ import {
   disconnectAccountAction,
   getConnectedAccountsAction,
   setupWatchForAccountAction,
+  stopWatchForAccountAction,
   type ConnectedAccount,
 } from "../actions/accounts";
 
@@ -13,6 +14,7 @@ interface UseConnectedAccountsReturn {
   isLoading: boolean;
   isDisconnecting: string | null;
   isSettingUpWatch: string | null;
+  isStoppingWatch: string | null;
   isConnecting: boolean;
   fetchAccounts: () => Promise<void>;
   disconnectAccount: (accountId: string) => Promise<{
@@ -21,6 +23,11 @@ interface UseConnectedAccountsReturn {
     error?: string;
   }>;
   setupWatch: (accountId: string) => Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>;
+  stopWatch: (accountId: string) => Promise<{
     success: boolean;
     message?: string;
     error?: string;
@@ -40,6 +47,7 @@ export function useConnectedAccounts(): UseConnectedAccountsReturn {
   const [isLoading, setIsLoading] = useState(true);
   const [isDisconnecting, setIsDisconnecting] = useState<string | null>(null);
   const [isSettingUpWatch, setIsSettingUpWatch] = useState<string | null>(null);
+  const [isStoppingWatch, setIsStoppingWatch] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
@@ -112,6 +120,36 @@ export function useConnectedAccounts(): UseConnectedAccountsReturn {
     }
   }, []);
 
+  const stopWatch = useCallback(async (accountId: string) => {
+    try {
+      setIsStoppingWatch(accountId);
+      const response = await stopWatchForAccountAction(accountId);
+
+      if (response.success) {
+        // Update the account in local state
+        setAccounts((prev) =>
+          prev.map((acc) =>
+            acc.id === accountId
+              ? {
+                  ...acc,
+                  hasActiveWatch: false,
+                  watchExpiresAt: undefined,
+                }
+              : acc
+          )
+        );
+        return { success: true, message: response.message };
+      } else {
+        return { success: false, error: response.error };
+      }
+    } catch (error) {
+      console.error("Error stopping watch:", error);
+      return { success: false, error: "Failed to stop monitoring" };
+    } finally {
+      setIsStoppingWatch(null);
+    }
+  }, []);
+
   const connectAccount = useCallback(async () => {
     try {
       setIsConnecting(true);
@@ -157,6 +195,7 @@ export function useConnectedAccounts(): UseConnectedAccountsReturn {
         !isLoading &&
         !isDisconnecting &&
         !isSettingUpWatch &&
+        !isStoppingWatch &&
         !isConnecting
       ) {
         fetchAccounts();
@@ -169,6 +208,7 @@ export function useConnectedAccounts(): UseConnectedAccountsReturn {
     isLoading,
     isDisconnecting,
     isSettingUpWatch,
+    isStoppingWatch,
     isConnecting,
   ]);
 
@@ -177,10 +217,12 @@ export function useConnectedAccounts(): UseConnectedAccountsReturn {
     isLoading,
     isDisconnecting,
     isSettingUpWatch,
+    isStoppingWatch,
     isConnecting,
     fetchAccounts,
     disconnectAccount,
     setupWatch,
+    stopWatch,
     connectAccount,
     refreshAccounts,
     totalActiveAccounts,
