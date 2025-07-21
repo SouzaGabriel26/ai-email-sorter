@@ -93,7 +93,7 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
               <div className="flex items-center justify-center mb-1">
                 <Sparkles className="h-4 w-4 text-purple-600 mr-1" />
                 <span className="text-lg font-bold text-purple-600">
-                  {aiAccuracy}%
+                  {aiAccuracy ? aiAccuracy.toFixed(2) : 0}%
                 </span>
               </div>
               <p className="text-xs text-gray-600">AI Accuracy</p>
