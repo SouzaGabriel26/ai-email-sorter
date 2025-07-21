@@ -1,6 +1,7 @@
 "use client";
 
 import { EmailDetails, EmailWithCategory } from "@/app/actions/emails";
+import { unsubscribeFromEmailsAction } from "@/app/actions/unsubscribe";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +41,7 @@ interface EmailViewerProps {
 
 export function EmailViewer({ email, emailDetails, onClose, onDelete, open, isLoading = false }: EmailViewerProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isUnsubscribing, setIsUnsubscribing] = useState(false);
 
   const formatRelativeTime = (date: Date) => {
     const now = new Date();
@@ -58,6 +60,25 @@ export function EmailViewer({ email, emailDetails, onClose, onDelete, open, isLo
       return name.split(" ").map(n => n[0]).join("").toUpperCase();
     }
     return email.split("@")[0].slice(0, 2).toUpperCase();
+  };
+
+  const handleUnsubscribe = async () => {
+    setIsUnsubscribing(true);
+    try {
+      const results = await unsubscribeFromEmailsAction([email.id]);
+      const result = results[0];
+      if (result.status === "completed") {
+        toast.success("Successfully unsubscribed from this email");
+      } else if (result.status === "no_links_found") {
+        toast("No unsubscribe link found for this email");
+      } else {
+        toast.error("Failed to unsubscribe", { description: result.error });
+      }
+    } catch (error) {
+      toast.error("Unsubscribe failed");
+    } finally {
+      setIsUnsubscribing(false);
+    }
   };
 
   return (
@@ -227,9 +248,11 @@ export function EmailViewer({ email, emailDetails, onClose, onDelete, open, isLo
                 variant="outline"
                 size="sm"
                 className="text-yellow-600 border-yellow-200 hover:bg-yellow-50"
+                onClick={handleUnsubscribe}
+                disabled={isUnsubscribing}
               >
                 <Unlink className="h-4 w-4 mr-2" />
-                Unsubscribe
+                {isUnsubscribing ? "Unsubscribing..." : "Unsubscribe"}
               </Button>
 
               <Button

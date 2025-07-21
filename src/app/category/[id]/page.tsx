@@ -14,12 +14,6 @@ import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-interface CategoryDetailPageProps {
-  params: {
-    id: string;
-  };
-}
-
 // Loading component for better UX
 function CategoryDetailLoading() {
   return (
@@ -61,6 +55,7 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
   const [isViewingEmail, setIsViewingEmail] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isUnsubscribing, setIsUnsubscribing] = useState(false);
 
   const { emailDetails, isLoading: emailDetailsLoading } = useEmailDetails(selectedEmailId);
 
@@ -133,13 +128,35 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
     }
   };
 
-  const handleUnsubscribeSelected = () => {
-    // TODO: Implement unsubscribe functionality
-    console.log("Unsubscribe from selected emails:", Array.from(selectedEmails));
-    toast.success("Unsubscribe functionality coming soon", {
-      description: "This will be implemented in the next phase",
-    });
-    setSelectedEmails(new Set());
+  const handleUnsubscribeSelected = async () => {
+    if (selectedEmails.size === 0) {
+      toast.error("No emails selected");
+      return;
+    }
+    setIsUnsubscribing(true);
+    try {
+      const { unsubscribeFromEmailsAction } = await import("../../actions/unsubscribe");
+      type UnsubscribeResult = { emailId: string; status: string; error?: string };
+      const results: UnsubscribeResult[] = await unsubscribeFromEmailsAction(Array.from(selectedEmails));
+      const completed = results.filter((r) => r.status === "completed").length;
+      const failed = results.filter((r) => r.status === "failed").length;
+      const noLinks = results.filter((r) => r.status === "no_links_found").length;
+      if (completed > 0) {
+        toast.success(`Successfully unsubscribed from ${completed} email${completed > 1 ? "s" : ""}`);
+      }
+      if (failed > 0) {
+        toast.error(`Failed to unsubscribe from ${failed} email${failed > 1 ? "s" : ""}`);
+      }
+      if (noLinks > 0) {
+        toast("No unsubscribe link found for " + noLinks + " email" + (noLinks > 1 ? "s" : ""));
+      }
+      setSelectedEmails(new Set());
+      await refetch();
+    } catch (error) {
+      toast.error("Unsubscribe failed");
+    } finally {
+      setIsUnsubscribing(false);
+    }
   };
 
   const handleEmailClick = (email: EmailWithCategory) => {
@@ -211,6 +228,7 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
             onDeleteSelected={handleDeleteSelected}
             onUnsubscribeSelected={handleUnsubscribeSelected}
             isAllSelected={selectedEmails.size === emails.length}
+            isUnsubscribing={isUnsubscribing}
           />
 
           {/* Email List */}

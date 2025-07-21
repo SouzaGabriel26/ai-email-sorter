@@ -24,6 +24,7 @@ interface CategoryHeaderProps {
   onDeleteSelected: () => void;
   onUnsubscribeSelected: () => void;
   isAllSelected: boolean;
+  isUnsubscribing?: boolean;
 }
 
 export function CategoryHeader({
@@ -34,6 +35,7 @@ export function CategoryHeader({
   onDeleteSelected,
   onUnsubscribeSelected,
   isAllSelected,
+  isUnsubscribing = false,
 }: CategoryHeaderProps) {
   const router = useRouter();
 
@@ -166,9 +168,14 @@ export function CategoryHeader({
                   size="sm"
                   onClick={onUnsubscribeSelected}
                   className="text-yellow-600 border-yellow-200 hover:bg-yellow-50"
+                  disabled={isUnsubscribing}
                 >
                   <Unlink className="h-4 w-4 mr-2" />
-                  Unsubscribe ({selectedCount})
+                  {isUnsubscribing ? (
+                    <span className="flex items-center"><span className="animate-spin mr-2 w-4 h-4 border-b-2 border-yellow-600 rounded-full"></span>Unsubscribing...</span>
+                  ) : (
+                    <>Unsubscribe ({selectedCount})</>
+                  )}
                 </Button>
 
                 <Button
