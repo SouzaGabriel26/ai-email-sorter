@@ -2,10 +2,6 @@
 
 ## 📺 Application Overview
 
-[![AI Email Sorter Overview](https://img.youtube.com/vi/YOUR_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
-
-> Click the image above to watch a short video overview of the app in action!
-
 AI Email Sorter is a modern, full-stack web application for managing and organizing Gmail accounts with the power of AI. It provides multi-account Gmail integration, AI-powered email categorization and summarization, bulk actions (delete, archive, unsubscribe), and a beautiful, responsive dashboard UI.
 
 ---
