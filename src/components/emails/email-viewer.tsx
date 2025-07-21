@@ -1,6 +1,6 @@
 "use client";
 
-import { EmailWithCategory } from "@/app/actions/emails";
+import { EmailDetails, EmailWithCategory } from "@/app/actions/emails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,24 +10,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Archive,
   Bot,
   Calendar,
+  ChevronDown,
   Clock,
+  Copy,
   ExternalLink,
+  Loader2,
   Mail,
   Unlink,
-  User,
+  User
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface EmailViewerProps {
   email: EmailWithCategory;
+  emailDetails: EmailDetails | null;
   onClose: () => void;
   open: boolean;
+  isLoading?: boolean;
 }
 
-export function EmailViewer({ email, onClose, open }: EmailViewerProps) {
+export function EmailViewer({ email, emailDetails, onClose, open, isLoading = false }: EmailViewerProps) {
   const formatRelativeTime = (date: Date) => {
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
@@ -163,18 +170,39 @@ export function EmailViewer({ email, onClose, open }: EmailViewerProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="prose">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                  <span className="text-gray-600">Loading email content...</span>
+                </div>
+              ) : emailDetails ? (
+                <div className="prose max-w-none">
+                  {emailDetails.bodyHtml ? (
+                    <div
+                      className="bg-gray-50 p-4 rounded-lg border"
+                      dangerouslySetInnerHTML={{ __html: emailDetails.bodyHtml }}
+                    />
+                  ) : emailDetails.bodyText ? (
+                    <div className="bg-gray-50 p-4 rounded-lg border">
+                      <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
+                        {emailDetails.bodyText}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 p-4 rounded-lg border">
+                      <p className="text-gray-500 text-sm">
+                        No email content available. The email body was not stored or is empty.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <div className="bg-gray-50 p-4 rounded-lg border">
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                    This is a sample email content. In the actual implementation,
-                    this would display the real email body content from the database.
-                  </p>
-                  <p className="text-gray-600 text-sm leading-relaxed mt-2">
-                    The email body would be rendered here with proper formatting,
-                    including any HTML content, images, and links that were in the original email.
+                  <p className="text-gray-500 text-sm">
+                    Email content not available. This might be a notification or system email.
                   </p>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
@@ -184,6 +212,8 @@ export function EmailViewer({ email, onClose, open }: EmailViewerProps) {
               <span>Email ID: {email.id}</span>
               <span>•</span>
               <span>Gmail ID: {email.gmailId}</span>
+              <span>•</span>
+              <span>Account: {email.toEmail}</span>
             </div>
 
             <div className="flex items-center space-x-2">
@@ -205,14 +235,54 @@ export function EmailViewer({ email, onClose, open }: EmailViewerProps) {
                 Archive
               </Button>
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-blue-600 border-blue-200 hover:bg-blue-50"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                View Original
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    View in Gmail
+                    <ChevronDown className="h-4 w-4 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      // Use only Subject + sender search format
+                      const searchQuery = `subject:"${email.subject}" from:${email.fromEmail}`;
+                      const url = `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(searchQuery)}`;
+                      window.open(url, '_blank');
+                    }}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open in Gmail
+                    <span className="ml-auto text-xs text-gray-500">Direct search</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      // Copy only the Subject + sender search query
+                      const searchQuery = `subject:"${email.subject}" from:${email.fromEmail}`;
+
+                      navigator.clipboard.writeText(searchQuery).then(() => {
+                        toast.success("Search query copied to clipboard", {
+                          description: "Subject + sender search format",
+                        });
+                      }).catch(() => {
+                        toast.error("Failed to copy search query", {
+                          description: "Please try again",
+                        });
+                      });
+                    }}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy search query
+                    <span className="ml-auto text-xs text-gray-500">Subject + sender</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>

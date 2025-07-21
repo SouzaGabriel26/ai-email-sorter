@@ -116,3 +116,60 @@ export async function getCategoriesAction() {
     return [];
   }
 }
+
+export async function getCategoryByIdAction(categoryId: string) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return null;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    // Handle "uncategorized" special case
+    if (categoryId === "uncategorized") {
+      const uncategorizedCount = await prisma.email.count({
+        where: {
+          userId: user.id,
+          categoryId: null,
+          processedAt: { not: null },
+        },
+      });
+
+      return {
+        id: "uncategorized",
+        name: "Uncategorized",
+        description: "Emails that couldn't be automatically categorized",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        _count: {
+          emails: uncategorizedCount,
+        },
+      };
+    }
+
+    const category = await prisma.category.findFirst({
+      where: {
+        id: categoryId,
+        userId: user.id,
+      },
+      include: {
+        _count: {
+          select: { emails: true },
+        },
+      },
+    });
+
+    return category;
+  } catch (error) {
+    console.error("Get category by ID error:", error);
+    return null;
+  }
+}

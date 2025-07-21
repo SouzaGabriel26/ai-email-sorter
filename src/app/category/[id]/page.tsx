@@ -1,7 +1,8 @@
 "use client";
 
-import { Category } from "@/app/actions/categories";
 import { EmailWithCategory } from "@/app/actions/emails";
+import { useCategory } from "@/app/hooks/useCategory";
+import { useEmailDetails } from "@/app/hooks/useEmailDetails";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { CategoryHeader } from "@/components/emails/category-header";
 import { EmailList } from "@/components/emails/email-list";
@@ -10,6 +11,13 @@ import type { Session } from "next-auth";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { toast } from "sonner";
+
+interface CategoryDetailPageProps {
+  params: {
+    id: string;
+  };
+}
 
 // Loading component for better UX
 function CategoryDetailLoading() {
@@ -23,69 +31,36 @@ function CategoryDetailLoading() {
   );
 }
 
+// Error component
+function CategoryDetailError({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center max-w-md mx-auto">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <span className="text-2xl">⚠️</span>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Category</h3>
+        <p className="text-gray-500 mb-6">{error}</p>
+        <button
+          onClick={onRetry}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Main category detail content
 function CategoryDetailContent({ categoryId, session }: { categoryId: string; session: Session }) {
-  const [emails, setEmails] = useState<EmailWithCategory[]>([]);
-  const [category, setCategory] = useState<Category | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { category, emails, isLoading, error, refetch } = useCategory(categoryId);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [selectedEmail, setSelectedEmail] = useState<EmailWithCategory | null>(null);
   const [isViewingEmail, setIsViewingEmail] = useState(false);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
-  // Mock data for now - will be replaced with actual API calls
-  useEffect(() => {
-    // Simulate loading
-    setTimeout(() => {
-      setCategory({
-        id: categoryId,
-        name: "Sample Category",
-        description: "This is a sample category for demonstration",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        _count: { emails: 5 }
-      });
-
-      setEmails([
-        {
-          id: "1",
-          gmailId: "gmail1",
-          subject: "Welcome to our newsletter",
-          fromEmail: "newsletter@example.com",
-          fromName: "Newsletter Team",
-          toEmail: "user@example.com",
-          aiSummary: "This is a welcome email for new subscribers with information about upcoming content.",
-          isArchived: false,
-          receivedAt: new Date(),
-          processedAt: new Date(),
-          createdAt: new Date(),
-          category: {
-            id: categoryId,
-            name: "Sample Category",
-            description: "This is a sample category"
-          }
-        },
-        {
-          id: "2",
-          gmailId: "gmail2",
-          subject: "Weekly digest - Top stories",
-          fromEmail: "digest@example.com",
-          fromName: "Digest Service",
-          toEmail: "user@example.com",
-          aiSummary: "Weekly summary of the most important stories and updates from the past week.",
-          isArchived: false,
-          receivedAt: new Date(Date.now() - 86400000),
-          processedAt: new Date(Date.now() - 86400000),
-          createdAt: new Date(Date.now() - 86400000),
-          category: {
-            id: categoryId,
-            name: "Sample Category",
-            description: "This is a sample category"
-          }
-        }
-      ]);
-      setIsLoading(false);
-    }, 1000);
-  }, [categoryId]);
+  const { emailDetails, isLoading: emailDetailsLoading } = useEmailDetails(selectedEmailId);
 
   const handleEmailSelect = (emailId: string, selected: boolean) => {
     const newSelected = new Set(selectedEmails);
@@ -108,24 +83,36 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
   const handleDeleteSelected = () => {
     // TODO: Implement delete functionality
     console.log("Delete selected emails:", Array.from(selectedEmails));
+    toast.success("Delete functionality coming soon", {
+      description: "This will be implemented in the next phase",
+    });
     setSelectedEmails(new Set());
   };
 
   const handleUnsubscribeSelected = () => {
     // TODO: Implement unsubscribe functionality
     console.log("Unsubscribe from selected emails:", Array.from(selectedEmails));
+    toast.success("Unsubscribe functionality coming soon", {
+      description: "This will be implemented in the next phase",
+    });
     setSelectedEmails(new Set());
   };
 
   const handleEmailClick = (email: EmailWithCategory) => {
     setSelectedEmail(email);
+    setSelectedEmailId(email.id);
     setIsViewingEmail(true);
   };
 
   const handleCloseEmailViewer = () => {
     setIsViewingEmail(false);
     setSelectedEmail(null);
+    setSelectedEmailId(null);
   };
+
+  if (error) {
+    return <CategoryDetailError error={error} onRetry={refetch} />;
+  }
 
   if (isLoading) {
     return <CategoryDetailLoading />;
@@ -162,8 +149,10 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
           {isViewingEmail && selectedEmail && (
             <EmailViewer
               email={selectedEmail}
+              emailDetails={emailDetails}
               onClose={handleCloseEmailViewer}
               open={isViewingEmail}
+              isLoading={emailDetailsLoading}
             />
           )}
         </div>

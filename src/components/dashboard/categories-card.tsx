@@ -26,6 +26,9 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
     router.push(`/category/${categoryId}`);
   };
 
+  // AI Accuracy is the percentage of emails that have been categorized
+  const aiAccuracy = categories.reduce((sum, cat) => sum + (cat._count?.emails || 0), 0) / totalEmails * 100;
+
   return (
     <Card className="border-2 border-blue-100 bg-gradient-to-br from-white to-blue-50/30 shadow-lg h-full">
       <CardHeader className="pb-4">
@@ -90,7 +93,7 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
               <div className="flex items-center justify-center mb-1">
                 <Sparkles className="h-4 w-4 text-purple-600 mr-1" />
                 <span className="text-lg font-bold text-purple-600">
-                  {totalEmails > 0 ? Math.round((totalEmails / (totalEmails + 10)) * 100) : 0}%
+                  {aiAccuracy}%
                 </span>
               </div>
               <p className="text-xs text-gray-600">AI Accuracy</p>
