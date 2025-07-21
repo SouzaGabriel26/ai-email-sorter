@@ -90,8 +90,8 @@ export function EmailList({
               <div
                 key={email.id}
                 className={`p-4 border rounded-lg transition-all duration-200 hover:shadow-md cursor-pointer ${isSelected
-                    ? 'border-blue-300 bg-blue-50'
-                    : 'border-gray-200 bg-white hover:bg-gray-50'
+                  ? 'border-blue-300 bg-blue-50'
+                  : 'border-gray-200 bg-white hover:bg-gray-50'
                   }`}
                 onClick={() => onEmailClick(email)}
               >
@@ -103,8 +103,8 @@ export function EmailList({
                       size="sm"
                       onClick={() => onEmailSelect(email.id, !isSelected)}
                       className={`h-6 w-6 p-0 ${isSelected
-                          ? 'text-blue-600 bg-blue-100 hover:bg-blue-200'
-                          : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                        ? 'text-blue-600 bg-blue-100 hover:bg-blue-200'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
                         }`}
                     >
                       {isSelected ? (

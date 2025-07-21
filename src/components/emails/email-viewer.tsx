@@ -4,6 +4,7 @@ import { EmailDetails, EmailWithCategory } from "@/app/actions/emails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -21,20 +22,25 @@ import {
   ExternalLink,
   Loader2,
   Mail,
+  Trash2,
   Unlink,
   User
 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 interface EmailViewerProps {
   email: EmailWithCategory;
   emailDetails: EmailDetails | null;
   onClose: () => void;
+  onDelete: (emailId: string) => void;
   open: boolean;
   isLoading?: boolean;
 }
 
-export function EmailViewer({ email, emailDetails, onClose, open, isLoading = false }: EmailViewerProps) {
+export function EmailViewer({ email, emailDetails, onClose, onDelete, open, isLoading = false }: EmailViewerProps) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   const formatRelativeTime = (date: Date) => {
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
@@ -230,9 +236,10 @@ export function EmailViewer({ email, emailDetails, onClose, open, isLoading = fa
                 variant="outline"
                 size="sm"
                 className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => setShowDeleteConfirm(true)}
               >
-                <Archive className="h-4 w-4 mr-2" />
-                Archive
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
               </Button>
 
               <DropdownMenu>
@@ -287,6 +294,22 @@ export function EmailViewer({ email, emailDetails, onClose, open, isLoading = fa
           </div>
         </div>
       </DialogContent>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Email"
+        description={`Are you sure you want to delete the email "${email.subject}"? This will delete it from both the app and Gmail. This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={() => {
+          onDelete(email.id);
+          setShowDeleteConfirm(false);
+          onClose();
+        }}
+      />
     </Dialog>
   );
 } 

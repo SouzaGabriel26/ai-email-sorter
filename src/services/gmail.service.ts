@@ -616,6 +616,80 @@ export class GmailService {
     }
   }
 
+  async deleteEmail(
+    options: GmailClientOptions,
+    messageId: string
+  ): Promise<boolean> {
+    try {
+      const gmail = await this.createAuthenticatedClient(options);
+
+      // First check if the message still exists
+      const messageResponse = await gmail.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "minimal",
+      });
+
+      const currentLabels = messageResponse.data.labelIds || [];
+
+      // Check if already in trash
+      if (currentLabels.includes("TRASH")) {
+        logger.debug("Email already in trash", {
+          messageId,
+          currentLabels: currentLabels.join(", "),
+        });
+        return true; // Consider this a success since the goal is achieved
+      }
+
+      // Check if email is in INBOX (if not, it might already be archived)
+      if (!currentLabels.includes("INBOX")) {
+        logger.debug("Email not in INBOX, might be archived", {
+          messageId,
+          currentLabels: currentLabels.join(", "),
+        });
+        // Still try to move to trash even if not in INBOX
+      }
+
+      // Move to trash
+      await gmail.users.messages.modify({
+        userId: "me",
+        id: messageId,
+        requestBody: {
+          addLabelIds: ["TRASH"], // Add to trash
+          removeLabelIds: ["INBOX", "UNREAD"], // Remove from inbox and mark as read
+        },
+      });
+
+      logger.info("Email moved to trash in Gmail", { messageId });
+      return true;
+    } catch (error) {
+      // Log the specific error to understand what's happening
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorCode = (error as { code?: number })?.code;
+      const errorStatus = (error as { status?: number })?.status;
+
+      logger.warn("Failed to delete email in Gmail", {
+        messageId,
+        error: errorMessage,
+        errorCode,
+        errorStatus,
+      });
+
+      // A 404 means the email doesn't exist in Gmail, which is a failure
+      // because we couldn't delete something that doesn't exist
+      if (errorCode === 404) {
+        logger.warn(
+          "Email not found in Gmail - cannot delete non-existent email",
+          { messageId }
+        );
+        return false; // This is a failure, not success
+      }
+
+      return false;
+    }
+  }
+
   async archiveEmail(
     options: GmailClientOptions,
     messageId: string

@@ -7,6 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { CategoryHeader } from "@/components/emails/category-header";
 import { EmailList } from "@/components/emails/email-list";
 import { EmailViewer } from "@/components/emails/email-viewer";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Session } from "next-auth";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
@@ -59,6 +60,7 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
   const [selectedEmail, setSelectedEmail] = useState<EmailWithCategory | null>(null);
   const [isViewingEmail, setIsViewingEmail] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   const { emailDetails, isLoading: emailDetailsLoading } = useEmailDetails(selectedEmailId);
 
@@ -80,13 +82,55 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
     }
   };
 
-  const handleDeleteSelected = () => {
-    // TODO: Implement delete functionality
-    console.log("Delete selected emails:", Array.from(selectedEmails));
-    toast.success("Delete functionality coming soon", {
-      description: "This will be implemented in the next phase",
-    });
-    setSelectedEmails(new Set());
+  const handleDeleteSelected = async () => {
+    if (selectedEmails.size === 0) {
+      toast.error("No emails selected");
+      return;
+    }
+
+    setShowBulkDeleteConfirm(true);
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    try {
+      // Import the delete action
+      const { deleteEmailAction } = await import("../../actions/emails");
+
+      // Delete each selected email
+      const deletePromises = Array.from(selectedEmails).map(emailId =>
+        deleteEmailAction(emailId)
+      );
+
+      const results = await Promise.all(deletePromises);
+
+      // Check results
+      const successful = results.filter(result => result.success);
+      const failed = results.filter(result => !result.success);
+      const gmailDeleted = results.filter(result => result.success && result.gmailDeleted);
+      const appOnlyDeleted = results.filter(result => result.success && !result.gmailDeleted);
+
+      if (failed.length > 0) {
+        toast.error(`Failed to delete ${failed.length} emails`);
+      } else {
+        let message = `Successfully deleted ${successful.length} email${successful.length > 1 ? 's' : ''}`;
+
+        if (gmailDeleted.length > 0 && appOnlyDeleted.length > 0) {
+          message += ` (${gmailDeleted.length} from both app and Gmail, ${appOnlyDeleted.length} from app only)`;
+        } else if (appOnlyDeleted.length > 0) {
+          message += ` (from app only - Gmail deletion failed for some emails)`;
+        }
+
+        toast.success(message);
+        setSelectedEmails(new Set());
+        // Refetch the data to update the list
+        await refetch();
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast.error("Failed to delete emails");
+    } finally {
+      setShowBulkDeleteConfirm(false);
+    }
   };
 
   const handleUnsubscribeSelected = () => {
@@ -108,6 +152,39 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
     setIsViewingEmail(false);
     setSelectedEmail(null);
     setSelectedEmailId(null);
+  };
+
+  const handleEmailDelete = async (emailId: string) => {
+    // Find the email to show in confirmation
+    const emailToDelete = emails.find(email => email.id === emailId);
+    if (!emailToDelete) return;
+
+    try {
+      // Import the delete action
+      const { deleteEmailAction } = await import("../../actions/emails");
+
+      const result = await deleteEmailAction(emailId);
+
+      if (result.success) {
+        const message = result.gmailDeleted
+          ? "Email deleted successfully from both app and Gmail"
+          : "Email deleted from app, but failed to delete from Gmail";
+
+        toast.success(message);
+
+        // Remove from selected emails if it was selected
+        const newSelected = new Set(selectedEmails);
+        newSelected.delete(emailId);
+        setSelectedEmails(newSelected);
+        // Refetch the data to update the list
+        await refetch();
+      } else {
+        toast.error(result.error || "Failed to delete email");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast.error("Failed to delete email");
+    }
   };
 
   if (error) {
@@ -151,10 +228,23 @@ function CategoryDetailContent({ categoryId, session }: { categoryId: string; se
               email={selectedEmail}
               emailDetails={emailDetails}
               onClose={handleCloseEmailViewer}
+              onDelete={handleEmailDelete}
               open={isViewingEmail}
               isLoading={emailDetailsLoading}
             />
           )}
+
+          {/* Bulk Delete Confirmation Dialog */}
+          <ConfirmDialog
+            open={showBulkDeleteConfirm}
+            onOpenChange={setShowBulkDeleteConfirm}
+            title="Delete Selected Emails"
+            description={`Are you sure you want to delete ${selectedEmails.size} email${selectedEmails.size > 1 ? 's' : ''}? This will delete them from both the app and Gmail. This action cannot be undone.`}
+            confirmText="Delete All"
+            cancelText="Cancel"
+            variant="destructive"
+            onConfirm={handleBulkDeleteConfirm}
+          />
         </div>
       </main>
     </div>
