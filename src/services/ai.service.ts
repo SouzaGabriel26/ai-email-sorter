@@ -35,9 +35,9 @@ export class AIService {
     }
 
     this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
-    // Using Gemini 2.0 Flash - the latest and most capable model
+    // Using Gemini 2.5 Pro - the latest and most capable model
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-2.5-pro",
       generationConfig: {
         temperature: 0.1, // Low temperature for consistent categorization
         topP: 0.95,
