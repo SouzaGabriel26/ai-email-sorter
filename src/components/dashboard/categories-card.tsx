@@ -6,7 +6,8 @@ import { CreateCategoryDialog } from "@/components/dashboard/create-category-dia
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Archive, Clock, Mail, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { Archive, Clock, ExternalLink, Mail, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface CategoriesCardProps {
   categories: Category[];
@@ -19,6 +20,11 @@ interface CategoriesCardProps {
 export function CategoriesCard({ categories, isLoading, createCategory, isCreating, onRefresh }: CategoriesCardProps) {
   const hasCategories = categories.length > 0;
   const totalEmails = categories.reduce((sum, cat) => sum + (cat._count?.emails || 0), 0);
+  const router = useRouter();
+
+  const handleCategoryClick = (categoryId: string) => {
+    router.push(`/category/${categoryId}`);
+  };
 
   return (
     <Card className="border-2 border-blue-100 bg-gradient-to-br from-white to-blue-50/30 shadow-lg h-full">
@@ -125,7 +131,7 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
                 className="p-4 border border-gray-200 rounded-lg hover:bg-white hover:shadow-md transition-all duration-200 bg-white/50"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleCategoryClick(category.id)}>
                     <div className="flex items-center space-x-2 mb-2">
                       <h4 className="font-semibold text-gray-900 truncate">{category.name}</h4>
                       <Badge variant="secondary" className="text-xs">
@@ -148,6 +154,16 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
                       )}
                     </div>
                   </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleCategoryClick(category.id)}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    View
+                  </Button>
                 </div>
               </div>
             ))}
