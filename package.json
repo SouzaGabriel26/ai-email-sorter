@@ -9,7 +9,10 @@
     "lint": "next lint",
     "docker:compose": "docker compose -f ./infra/docker-compose.yaml",
     "services:up": "pnpm docker:compose --env-file=.env up -d",
-    "services:down": "pnpm docker:compose --env-file=.env down"
+    "services:down": "pnpm docker:compose --env-file=.env down",
+    "test": "jest",
+    "test:ci": "jest --ci --runInBand",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -41,14 +44,23 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.54.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.4.1",
+    "jest": "^30.0.4",
+    "jest-environment-jsdom": "^30.0.4",
+    "msw": "^2.10.4",
     "prisma": "^6.12.0",
     "tailwindcss": "^4",
+    "ts-jest": "^29.4.0",
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   }
