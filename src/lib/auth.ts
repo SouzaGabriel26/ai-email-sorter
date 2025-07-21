@@ -31,40 +31,62 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user, account, profile: _profile }) {
+      // Only set up Gmail watch if this is an explicit account connection
+      // Not on regular sign-ins to prevent unnecessary watch creation
       if (account?.provider === "google" && account.access_token) {
         try {
-          // For additional account connections, we need to find the existing user
-          // The user.id from OAuth might not match our database user ID
+          // Check if this is a new account connection vs regular sign-in
+          // We can detect this by checking if the user already exists
           let dbUser;
 
           if (user.email) {
             dbUser = await prisma.user.findUnique({
               where: { email: user.email },
+              include: {
+                accounts: {
+                  where: { provider: "google" },
+                  select: { id: true },
+                },
+              },
             });
           }
 
-          // If no user found by email, this might be a new user
+          // Skip auto-watch setup for:
+          // 1. New users (let them set up manually)
+          // 2. Existing users with accounts (prevent duplicate setups)
           if (!dbUser) {
-            console.log(
-              "No existing user found, skipping Gmail watch setup for new user"
-            );
+            console.log("New user sign-up - skipping auto Gmail watch setup");
             return true;
           }
 
-          // Set up Gmail watch for this account using the correct database user ID
-          const result = await setupGmailWatchForUser(
-            dbUser.id, // Use the actual database user ID
-            account.access_token,
-            account.refresh_token
-          );
+          // Check if this is adding a new account vs re-authenticating existing
+          const existingAccountCount = dbUser.accounts.length;
 
-          if (result.success) {
-            console.log("Auto-monitoring set up:", result.message);
+          // Only auto-setup for the very first Google account connection
+          // All subsequent accounts should be set up manually via UI
+          if (existingAccountCount === 0) {
+            console.log(
+              "First Google account connection - setting up Gmail watch"
+            );
+
+            const result = await setupGmailWatchForUser(
+              dbUser.id,
+              account.access_token,
+              account.refresh_token
+            );
+
+            if (result.success) {
+              console.log("Auto-monitoring set up:", result.message);
+            } else {
+              console.warn("Auto-monitoring setup failed:", result.error);
+            }
           } else {
-            console.warn("Auto-monitoring setup failed:", result.error);
+            console.log(
+              `User has ${existingAccountCount} existing accounts - skipping auto watch setup`
+            );
           }
         } catch (error) {
-          console.error("Error setting up auto-monitoring:", error);
+          console.error("Error in sign-in callback:", error);
         }
       }
       return true;
