@@ -13,6 +13,22 @@ export function useCategory(categoryId: string) {
       setIsLoading(true);
       setError(null);
 
+      if (categoryId === "uncategorized") {
+        // Pseudo-category for uncategorized emails
+        const uncategorizedCategory: Category = {
+          id: "uncategorized",
+          name: "Uncategorized",
+          description: "Emails that could not be categorized by AI",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          _count: { emails: 0 },
+        };
+        setCategory(uncategorizedCategory);
+        const emailsData = await getEmailsAction("uncategorized");
+        setEmails(emailsData);
+        return;
+      }
+
       // Import the action dynamically to avoid server/client issues
       const { getCategoryByIdAction } = await import("../actions/categories");
 

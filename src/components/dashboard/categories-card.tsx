@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Archive, Clock, ExternalLink, Mail, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 interface CategoriesCardProps {
   categories: Category[];
@@ -21,6 +22,22 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
   const hasCategories = categories.length > 0;
   const totalEmails = categories.reduce((sum, cat) => sum + (cat._count?.emails || 0), 0);
   const router = useRouter();
+
+  // Add state for uncategorized email count
+  const [uncategorizedCount, setUncategorizedCount] = useState<number>(0);
+
+  useEffect(() => {
+    async function fetchUncategorizedCount() {
+      try {
+        const { getUncategorizedEmailCountAction } = await import("@/app/actions/emails");
+        const count = await getUncategorizedEmailCountAction();
+        setUncategorizedCount(count);
+      } catch {
+        setUncategorizedCount(0);
+      }
+    }
+    fetchUncategorizedCount();
+  }, []);
 
   const handleCategoryClick = (categoryId: string) => {
     router.push(`/category/${categoryId}`);
@@ -170,6 +187,40 @@ export function CategoriesCard({ categories, isLoading, createCategory, isCreati
                 </div>
               </div>
             ))}
+            {/* UNCATEGORIZED pseudo-category */}
+            <div
+              key="uncategorized"
+              className="p-4 border border-yellow-200 rounded-lg hover:bg-white hover:shadow-md transition-all duration-200 bg-yellow-50/70"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleCategoryClick('uncategorized')}>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <h4 className="font-semibold text-yellow-900 truncate">Uncategorized</h4>
+                    <Badge variant="secondary" className="text-xs bg-yellow-200 text-yellow-900">
+                      {uncategorizedCount} emails
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-yellow-800 line-clamp-2 mb-2">
+                    Emails that could not be categorized by AI
+                  </p>
+                  <div className="flex items-center space-x-4 text-xs text-yellow-700">
+                    <div className="flex items-center space-x-1">
+                      <Clock className="h-3 w-3" />
+                      <span>Always visible</span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleCategoryClick('uncategorized')}
+                  className="text-yellow-900 hover:text-yellow-800 hover:bg-yellow-100"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  View
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 

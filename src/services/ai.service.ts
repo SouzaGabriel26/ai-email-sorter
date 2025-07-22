@@ -74,25 +74,40 @@ export class AIService {
       const prompt = this.buildCategorizationPrompt(emailText, categories);
 
       // Step 4: Call Gemini for categorization and summarization
-      const result = await this.model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
-
-      logger.debug("AI categorization response", {
+      let text: string = "";
+      let parseError: Error | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const result = await this.model.generateContent(prompt);
+          const response = result.response;
+          text = response.text();
+          logger.debug("AI categorization response", {
+            userId,
+            subject: emailContent.subject,
+            responseLength: text.length,
+            responseText: text.substring(0, 500),
+            attempt,
+          });
+          // Try to parse
+          return await this.parseAIResponse(text, categories);
+        } catch (err) {
+          parseError = err instanceof Error ? err : new Error(String(err));
+          logger.warn("AI categorization parse attempt failed", {
+            userId,
+            subject: emailContent.subject,
+            attempt,
+            error: parseError.message,
+            responseText: text.substring(0, 500),
+          });
+        }
+      }
+      // If both attempts fail, fallback
+      logger.error("AI categorization failed after retries", {
         userId,
         subject: emailContent.subject,
-        responseLength: text.length,
+        error: parseError ? parseError.message : "Unknown error",
+        lastResponse: text.substring(0, 500),
       });
-
-      // Step 5: Parse AI response
-      return this.parseAIResponse(text, categories);
-    } catch (error) {
-      logger.error("AI categorization failed", {
-        userId,
-        subject: emailContent.subject,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
       // Fallback: provide summary without categorization
       try {
         const summary = await this.generateSummary(emailContent);
@@ -108,13 +123,41 @@ export class AIService {
           userId,
           subject: emailContent.subject,
         });
-
         return {
           categoryId: null,
           categoryName: null,
           summary: `Email from ${emailContent.fromEmail} about: ${emailContent.subject}`,
           confidence: 0,
           reasoning: "AI processing failed, using basic summary",
+        };
+      }
+    } catch (error) {
+      logger.error("AI categorization failed (outer catch)", {
+        userId,
+        subject: emailContent.subject,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Fallback: provide summary without categorization
+      try {
+        const summary = await this.generateSummary(emailContent);
+        return {
+          categoryId: null,
+          categoryName: null,
+          summary,
+          confidence: 0,
+          reasoning: "Categorization failed, summary only (outer catch)",
+        };
+      } catch {
+        logger.error("Fallback summary generation failed (outer catch)", {
+          userId,
+          subject: emailContent.subject,
+        });
+        return {
+          categoryId: null,
+          categoryName: null,
+          summary: `Email from ${emailContent.fromEmail} about: ${emailContent.subject}`,
+          confidence: 0,
+          reasoning: "AI processing failed, using basic summary (outer catch)",
         };
       }
     }

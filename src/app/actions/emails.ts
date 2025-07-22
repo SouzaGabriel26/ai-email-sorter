@@ -67,13 +67,15 @@ export async function getEmailsAction(
     const whereClause: {
       userId: string;
       processedAt: { not: null };
-      categoryId?: string;
+      categoryId?: string | null;
     } = {
       userId: user.id,
       processedAt: { not: null }, // Only show processed emails
     };
 
-    if (categoryId) {
+    if (categoryId === "uncategorized") {
+      whereClause.categoryId = null;
+    } else if (categoryId) {
       whereClause.categoryId = categoryId;
     }
 
@@ -511,5 +513,31 @@ export async function deleteEmailAction(emailId: string) {
       success: false,
       error: error instanceof Error ? error.message : "Failed to delete email",
     };
+  }
+}
+
+export async function getUncategorizedEmailCountAction(): Promise<number> {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return 0;
+    }
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+    if (!user) {
+      return 0;
+    }
+    const count = await prisma.email.count({
+      where: {
+        userId: user.id,
+        processedAt: { not: null },
+        categoryId: null,
+      },
+    });
+    return count;
+  } catch (error) {
+    console.error("Get uncategorized email count error:", error);
+    return 0;
   }
 }
